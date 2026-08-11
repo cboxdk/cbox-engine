@@ -1,0 +1,10 @@
+# What a `composer require` does NOT need. The dist archive is what every
+# consumer downloads; tests, CI and tooling config are ours and add weight to
+# every install of theirs.
+/.github            export-ignore
+/tests              export-ignore
+/.gitattributes     export-ignore
+/.gitignore         export-ignore
+/phpunit.xml        export-ignore
+/phpstan.neon       export-ignore
+/pint.json          export-ignore

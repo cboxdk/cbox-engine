@@ -2,7 +2,33 @@
     "name": "cboxdk/cbox-engine",
     "description": "The engine behind the cbox CLI and the Cbox Local desktop app \u2014 one local Kubernetes cluster running an application the way production does.",
     "type": "library",
-    "license": "proprietary",
+    "keywords": [
+        "kubernetes",
+        "kind",
+        "local-development",
+        "docker",
+        "laravel",
+        "cbox",
+        "platform",
+        "developer-experience",
+        "gateway-api",
+        "scale-to-zero",
+        "paas",
+        "preview-environments"
+    ],
+    "homepage": "https://github.com/cboxdk/cbox-engine",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Cbox",
+            "homepage": "https://cboxdk.com"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/cboxdk/cbox-engine/issues",
+        "source": "https://github.com/cboxdk/cbox-engine",
+        "security": "https://github.com/cboxdk/cbox-engine/security/policy"
+    },
     "require": {
         "php": "^8.3",
         "cboxdk/platform": "^0.11.0",
@@ -53,11 +79,5 @@
         "sort-packages": true
     },
     "minimum-stability": "stable",
-    "prefer-stable": true,
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "git@github.com:cboxdk/platform.git"
-        }
-    ]
+    "prefer-stable": true
 }
