@@ -1,0 +1,8 @@
+{
+  "gateway_api": "v1.5.1",
+  "gateway": "v1.8.3",
+  "cert_manager": "v1.21.0",
+  "cnpg_chart": "0.29.0",
+  "keda_chart": "2.20.1",
+  "keda_http_chart": "0.15.0"
+}
