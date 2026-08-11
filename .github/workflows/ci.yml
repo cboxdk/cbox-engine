@@ -24,16 +24,6 @@ jobs:
           extensions: mbstring, curl, openssl, posix
           coverage: none
 
-      - name: Authenticate to the private packages
-        env:
-          TOKEN: ${{ secrets.CBOX_PACKAGES_TOKEN || secrets.GHCR_READ_TOKEN }}
-        run: |
-          if [ -z "$TOKEN" ]; then
-            echo "::error::No token to read the private cboxdk packages with."
-            exit 1
-          fi
-          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "git@github.com:"
-
       - run: composer install --no-interaction --prefer-dist
 
       - run: vendor/bin/pint --test
