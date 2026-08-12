@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Cbox\Engine\Tests;
 
 use Cbox\Engine\Project\LinkedPackages;
+use Cbox\Engine\Project\ProjectManifest;
 
 /*
  * A composer path repository is a symlink out of the project. It resolves on the
@@ -68,4 +69,28 @@ it('leaves alone what it cannot resolve', function (): void {
 it('says nothing about a project with no composer.json', function (): void {
     expect((new LinkedPackages)->forProject(sys_get_temp_dir().'/cbox-nope-'.getmypid(), '/var/www/html'))
         ->toBe([]);
+});
+
+it('lets PHP read what it just mounted', function (): void {
+    // Mounting the sibling is half the job. PHP refuses a path outside
+    // open_basedir, so the web process reported "No such file or directory" for a
+    // directory that was demonstrably there — while the queue worker, which has no
+    // open_basedir on the CLI, ran perfectly beside it on the same mount.
+    $manifest = (new ProjectManifest(name: 'demo', image: 'php:8.4', port: 8080, domains: [], fromSource: true))
+        ->alsoReading(['/var/www/laravel-id', '/var/www/other']);
+
+    expect($manifest->env['PHP_OPEN_BASEDIR_EXTRA'])->toBe('/var/www/laravel-id:/var/www/other');
+});
+
+it('leaves an author who set the paths themselves alone', function (): void {
+    $manifest = (new ProjectManifest(
+        name: 'demo',
+        image: 'php:8.4',
+        port: 8080,
+        domains: [],
+        env: ['PHP_OPEN_BASEDIR_EXTRA' => '/opt/mine'],
+        fromSource: true,
+    ))->alsoReading(['/var/www/laravel-id']);
+
+    expect($manifest->env['PHP_OPEN_BASEDIR_EXTRA'])->toBe('/opt/mine');
 });

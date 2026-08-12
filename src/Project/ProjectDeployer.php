@@ -18,6 +18,7 @@ use Cbox\Platform\Compile\EngineDatabaseCompiler;
 use Cbox\Platform\Compile\ServiceCompiler;
 use Cbox\Platform\Compile\StatefulDatabaseCompiler;
 use Cbox\Platform\Manifest\Manifest;
+use Cbox\Platform\Service\SourceMount;
 
 /**
  * A project's manifest, compiled and applied.
@@ -113,7 +114,20 @@ class ProjectDeployer
             $linked = (new LinkedPackages)->forProject($manifest->path, $manifest->mountPath);
 
             if ($linked !== []) {
-                $manifest = $manifest->alsoMounting($linked);
+                // AND open_basedir HAS TO REACH THEM. Mounting the sibling is half
+                // the job: PHP refuses a path outside the list, so the web process
+                // got "No such file or directory" for a directory that was now
+                // demonstrably there — while the queue worker, which has no
+                // open_basedir at all on the CLI, ran perfectly. One green process
+                // beside one broken one, on the same mount.
+                //
+                // `_EXTRA` rather than the whole list: the image owns its default,
+                // which includes the /proc and /etc paths its own metrics collector
+                // reads, and a platform restating that list would freeze a copy of
+                // it here.
+                $manifest = $manifest->alsoMounting($linked)->alsoReading(
+                    array_map(static fn (SourceMount $mount): string => $mount->mountPath, $linked),
+                );
             }
         }
 

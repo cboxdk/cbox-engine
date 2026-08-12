@@ -254,6 +254,55 @@ readonly class ProjectManifest
         );
     }
 
+    /**
+     * The same project, with more paths PHP is allowed to read.
+     *
+     * Appended through `PHP_OPEN_BASEDIR_EXTRA` so the image keeps ownership of
+     * its own default — which includes the kernel statistics its metrics
+     * collector reads, and which a platform restating the whole list would
+     * freeze a stale copy of.
+     *
+     * @param  list<string>  $paths
+     */
+    public function alsoReading(array $paths): self
+    {
+        if ($paths === []) {
+            return $this;
+        }
+
+        $existing = $this->env['PHP_OPEN_BASEDIR_EXTRA'] ?? '';
+        $all = array_values(array_unique(array_filter(
+            array_merge($existing === '' ? [] : explode(':', $existing), $paths),
+        )));
+
+        // The manifest wins, as everywhere else: an author who set this meant it.
+        $env = array_key_exists('PHP_OPEN_BASEDIR_EXTRA', $this->env) && $existing !== ''
+            ? $this->env
+            : ['PHP_OPEN_BASEDIR_EXTRA' => implode(':', $all)] + $this->env;
+
+        return new self(
+            name: $this->name,
+            image: $this->image,
+            port: $this->port,
+            domains: $this->domains,
+            env: $env,
+            processes: $this->processes,
+            replicas: $this->replicas,
+            resources: $this->resources,
+            scaleToZero: $this->scaleToZero,
+            idleSeconds: $this->idleSeconds,
+            suspended: $this->suspended,
+            environment: $this->environment,
+            path: $this->path,
+            urlVariable: $this->urlVariable,
+            fromSource: $this->fromSource,
+            build: $this->build,
+            services: $this->services,
+            mountPath: $this->mountPath,
+            mounts: $this->mounts,
+        );
+    }
+
     public function runningImage(string $image): self
     {
         return new self(
