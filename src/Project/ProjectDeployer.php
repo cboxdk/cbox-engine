@@ -12,6 +12,7 @@ use Cbox\Engine\Platform\LocalTarget;
 use Cbox\Engine\Platform\ProjectListeners;
 use Cbox\Engine\ValueObjects\ApplyOutcome;
 use Cbox\Engine\ValueObjects\ManifestDocument;
+use Cbox\Engine\ValueObjects\Sweep;
 use Cbox\Platform\Compile\BackupCompiler;
 use Cbox\Platform\Compile\CnpgDatabaseCompiler;
 use Cbox\Platform\Compile\EngineDatabaseCompiler;
@@ -216,7 +217,26 @@ class ProjectDeployer
             $this->removeWorkloads($manifest, $compiled->manifests);
         }
 
-        return $this->kubernetes->apply($documents, $dryRun);
+        // TAKE AWAY WHAT IS NO LONGER ASKED FOR, AND DO IT FIRST. Server-side
+        // apply never removes, so without this a deploy could only ever add —
+        // and a leftover object is a second controller still acting on the
+        // workload. See {@see OrphanedObjects} for the outage that measured it.
+        //
+        // BEFORE THE APPLY, BECAUSE AFTER IT IS A RACE THIS LOSES. Sweeping
+        // afterwards was measured on the live cluster: the apply put two pods
+        // on the Deployment, the scaler that had not been deleted yet took it
+        // back to zero, and the sweep then removed the scaler — leaving the
+        // workload at zero with nothing left to raise it. Correct on the NEXT
+        // deploy, which is not what a deploy is for. Removing the leftover
+        // first means nothing is left to argue with the apply.
+        // A DRY RUN WORKS OUT THE SAME ANSWER AND CHANGES NOTHING. "What would
+        // this take away" is the question worth asking before a deploy, and it
+        // cannot be read off the file: it is the difference between the file and
+        // the cluster.
+        $swept = new OrphanedObjects($this->kubernetes)
+            ->sweep($manifest->namespace(), $documents, commit: ! $dryRun);
+
+        return $this->kubernetes->apply($documents, $dryRun)->including($swept);
     }
 
     /**

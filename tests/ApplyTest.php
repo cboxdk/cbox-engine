@@ -269,3 +269,23 @@ it('publishes the gateway on the node ports the cluster maps to the host', funct
     expect($config)->toContain('containerPort: '.ClusterConfig::HTTP_NODE_PORT)
         ->and($config)->toContain('containerPort: '.ClusterConfig::HTTPS_NODE_PORT);
 });
+
+it('reads the kind the api server reports, not the plural resource name', function (): void {
+    // NOTHING CALLED THIS UNTIL A SWEEP DID, and it had never worked: `-o name`
+    // prints `certificates.cert-manager.io`, which the singular `certificate.`
+    // can never prefix-match. Every question was answered "no", so the first
+    // caller removed nothing on a cluster serving every kind it asked about.
+    $runner = (new FakeCommandRunner)->stage(
+        ['docker', 'exec', '-i', 'cbox-control-plane', 'kubectl', '--kubeconfig', '/etc/kubernetes/admin.conf',
+            'api-resources', '--api-group=http.keda.sh', '--no-headers'],
+        new CommandResult(true, 0, <<<'TEXT'
+            httpscaledobjects   httpso   http.keda.sh/v1alpha1   true   HTTPScaledObject
+            interceptorroutes            http.keda.sh/v1beta1    true   InterceptorRoute
+            TEXT, ''),
+    );
+
+    $cluster = new NodeKubectl($runner);
+
+    expect($cluster->serves('http.keda.sh/v1alpha1', 'HTTPScaledObject'))->toBeTrue()
+        ->and($cluster->serves('http.keda.sh/v1alpha1', 'ScaledObject'))->toBeFalse();
+});

@@ -269,14 +269,30 @@ class NodeKubectl implements Kubernetes
 
     public function serves(string $apiVersion, string $kind): bool
     {
-        $result = $this->runner->run($this->kubectl(['api-resources', '--api-group='.$this->group($apiVersion), '-o', 'name']), timeout: 30);
+        // THE KIND COLUMN, NOT THE RESOURCE NAME. `-o name` prints the plural
+        // resource — `certificates.cert-manager.io`, `httpscaledobjects.http
+        // .keda.sh` — and this compared it against the singular kind, so
+        // `certificate.` never matched `certificates.` and every question was
+        // answered "no". Nothing called this until a sweep did, and the sweep
+        // then quietly removed nothing at all on a cluster serving every kind
+        // it asked about.
+        //
+        // Pluralisation is not guessable — Ingress/ingresses, Policy/policies —
+        // so this reads the KIND the API server itself reports, which is the
+        // last column, and compares it exactly.
+        $result = $this->runner->run(
+            $this->kubectl(['api-resources', '--api-group='.$this->group($apiVersion), '--no-headers']),
+            timeout: 30,
+        );
 
         if (! $result->successful()) {
             return false;
         }
 
         foreach (preg_split('/\R/', $result->text()) ?: [] as $line) {
-            if (str_starts_with(strtolower($line), strtolower($kind).'.')) {
+            $columns = preg_split('/\s+/', trim($line)) ?: [];
+
+            if ($columns !== [] && end($columns) === $kind) {
                 return true;
             }
         }

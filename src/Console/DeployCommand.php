@@ -86,6 +86,8 @@ class DeployCommand extends Command
                 'validated' => ! $unseen,
                 'succeeded' => $outcome->succeeded,
                 'objects' => $outcome->applied,
+                'removed' => $outcome->swept->removed,
+                'retained' => $outcome->swept->retained,
                 'failure' => $outcome->failure,
                 'running' => $blocked === null,
                 'blocked' => $blocked,
@@ -133,6 +135,21 @@ class DeployCommand extends Command
         $this->line($dryRun
             ? '  <fg=green>✓</> '.$this->label($manifest)." would apply — {$outcome->applied} objects, nothing changed."
             : '  <fg=green>✓</> '.$this->label($manifest)." deployed — {$outcome->applied} objects.");
+
+        foreach ($outcome->swept->removed as $gone) {
+            $this->line($dryRun
+                ? "      <fg=gray>would remove {$gone} — the manifest no longer asks for it.</>"
+                : "      <fg=gray>removed {$gone} — the manifest no longer asks for it.</>");
+        }
+
+        // NAMED, AND NAMED AS A CHOICE. This is a database still running that
+        // the manifest has stopped mentioning: silence would leave a volume on
+        // the machine that nothing accounts for, and deleting it would destroy
+        // data because somebody edited a YAML file.
+        foreach ($outcome->swept->retained as $kept) {
+            $this->line("      <fg=yellow>{$kept} is still running and no longer in this manifest.</>");
+            $this->line('      <fg=gray>It holds data, so it was left alone. `cbox remove` takes it with the project.</>');
+        }
 
         $ports = $published->current();
 

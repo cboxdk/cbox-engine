@@ -140,3 +140,50 @@ it('knows which deployment is the web one', function (): void {
         ->and($running[0]->idle())->toBeFalse()
         ->and($running[0]->toArray()['state'])->toBe('running');
 });
+
+function scaler(string $service): ManifestDocument
+{
+    return ManifestDocument::fromArray([
+        'apiVersion' => 'http.keda.sh/v1alpha1',
+        'kind' => 'HTTPScaledObject',
+        'metadata' => [
+            'name' => $service,
+            'namespace' => 'cbox-'.$service,
+            'labels' => [
+                'platform.cbox.dk/managed' => 'true',
+                'platform.cbox.dk/service' => $service,
+            ],
+        ],
+    ]);
+}
+
+it('does not tell somebody to wake a project that wakes itself', function (): void {
+    // THE COMMONEST PROJECT THERE IS, and it read as asleep. An application with
+    // one process and scale-to-zero has nothing running once its web idles down,
+    // so "everything is at zero" matched — and status printed `cbox wake` at a
+    // project that answers the next request on its own. The distinction only
+    // survived for a project that happened to own a second process.
+    //
+    // Measured live: deployed at zero, woken by a request in 6s, idled back
+    // down, reported as put away.
+    $kubernetes = new RecordingKubernetes;
+    $kubernetes->listed = [deployment('acme', 'web', 0, 0), scaler('acme')];
+
+    $state = new ProjectRegistry($kubernetes)->all()[0];
+
+    expect($state->asleep())->toBeFalse()
+        ->and($state->idle())->toBeTrue()
+        ->and($state->toArray()['state'])->toBe('idle');
+});
+
+it('still calls a project asleep once its scaler is gone', function (): void {
+    // `cbox sleep` compiles a set with no scaler in it, and the deploy takes the
+    // old one away — so the absence is what "put away" means on the cluster.
+    $kubernetes = new RecordingKubernetes;
+    $kubernetes->listed = [deployment('acme', 'web', 0, 0)];
+
+    $state = new ProjectRegistry($kubernetes)->all()[0];
+
+    expect($state->asleep())->toBeTrue()
+        ->and($state->toArray()['state'])->toBe('asleep');
+});

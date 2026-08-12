@@ -82,6 +82,8 @@ class ProjectRegistry
             }
         }
 
+        $waking = $this->wakesOnRequest();
+
         $states = [];
 
         foreach ($projects as $name => $project) {
@@ -93,12 +95,44 @@ class ProjectRegistry
                 otherProcesses: $project['processes'],
                 webWanted: $project['webWanted'],
                 webRunning: $project['webRunning'],
+                wakesOnRequest: isset($waking[$name]),
             );
         }
 
         usort($states, static fn (ProjectState $a, ProjectState $b): int => strcmp($a->name, $b->name));
 
         return $states;
+    }
+
+    /**
+     * The projects a scaler will raise from zero when a request arrives.
+     *
+     * ASKED OF THE CLUSTER, not of the manifest on this machine. A replica count
+     * of zero looks identical whether somebody put the project away or its own
+     * autoscaler idled it down, and the two need opposite sentences: one wants
+     * `cbox wake`, the other wants nothing at all. The HTTPScaledObject is the
+     * difference, and it is only there in the second case — putting a project to
+     * sleep compiles a set without it, and the deploy takes the old one away.
+     *
+     * @return array<string, true>
+     */
+    private function wakesOnRequest(): array
+    {
+        if (! $this->kubernetes->serves('http.keda.sh/v1alpha1', 'HTTPScaledObject')) {
+            return [];
+        }
+
+        $waking = [];
+
+        foreach ($this->kubernetes->list('httpscaledobject', 'platform.cbox.dk/managed=true') as $scaler) {
+            $name = $scaler->labels()['platform.cbox.dk/service'] ?? '';
+
+            if ($name !== '') {
+                $waking[$name] = true;
+            }
+        }
+
+        return $waking;
     }
 
     /**

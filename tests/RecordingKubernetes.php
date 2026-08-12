@@ -120,7 +120,17 @@ class RecordingKubernetes implements Kubernetes
      */
     public function list(string $kind, string $selector, string $namespace = ''): array
     {
-        return $this->listedBySelector[$selector] ?? $this->listed;
+        // FILTERED BY KIND AND NAMESPACE, because the real one is. A fake that
+        // hands back the same objects whatever it was asked lets a caller sweep
+        // Deployments and be given HTTPRoutes, or sweep one environment and be
+        // given another's — and the test passes, because the fake agreed with
+        // the mistake. An empty namespace means the whole cluster, as it does
+        // for kubectl.
+        return array_values(array_filter(
+            $this->listedBySelector[$selector] ?? $this->listed,
+            static fn (ManifestDocument $document): bool => strtolower($document->kind()) === strtolower($kind)
+                && ($namespace === '' || $document->stringAt('metadata', 'namespace') === $namespace),
+        ));
     }
 
     public function serves(string $apiVersion, string $kind): bool

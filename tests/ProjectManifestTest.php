@@ -8,6 +8,7 @@ use Cbox\Engine\Project\ProjectDeployer;
 use Cbox\Engine\Project\ProjectManifestReader;
 use Cbox\Engine\Tests\RecordingKubernetes;
 use Cbox\Engine\ValueObjects\ApplyOutcome;
+use Cbox\Engine\ValueObjects\ManifestDocument;
 
 /*
  * The manifest is the product's most visible surface, and every refusal here
@@ -168,4 +169,80 @@ it('rebuilds only workloads, and only when asked', function (): void {
         'deployment/acme',
         'deployment/acme-queue',
     ]);
+});
+
+it('takes away what a deploy stopped asking for', function (): void {
+    $kubernetes = new RecordingKubernetes;
+
+    // The scaler from a previous deploy, when the project asked for
+    // scale-to-zero and no longer does. Left behind, it takes the Deployment
+    // back to zero seconds after the apply put two pods on it.
+    $kubernetes->listed = [ManifestDocument::fromArray([
+        'apiVersion' => 'http.keda.sh/v1alpha1',
+        'kind' => 'HTTPScaledObject',
+        'metadata' => [
+            'name' => 'acme',
+            'namespace' => 'cbox-acme',
+            'labels' => ['platform.cbox.dk/managed' => 'true'],
+        ],
+    ])];
+
+    $outcome = new ProjectDeployer($kubernetes, new LocalTarget)->deploy(
+        (new ProjectManifestReader)->read(writeManifest("name: acme\nimage: acme/web:1\n").'/cbox.yaml')
+    );
+
+    expect($outcome->swept->removed)->toBe(['HTTPScaledObject/acme'])
+        ->and($kubernetes->deleted)->toBe(['httpscaledobject/acme']);
+});
+
+it('changes nothing on a dry run, including what it would take away', function (): void {
+    $kubernetes = new RecordingKubernetes;
+    $kubernetes->listed = [ManifestDocument::fromArray([
+        'apiVersion' => 'http.keda.sh/v1alpha1',
+        'kind' => 'HTTPScaledObject',
+        'metadata' => [
+            'name' => 'acme',
+            'namespace' => 'cbox-acme',
+            'labels' => ['platform.cbox.dk/managed' => 'true'],
+        ],
+    ])];
+
+    $outcome = new ProjectDeployer($kubernetes, new LocalTarget)->deploy(
+        (new ProjectManifestReader)->read(writeManifest("name: acme\nimage: acme/web:1\n").'/cbox.yaml'),
+        dryRun: true,
+    );
+
+    expect($kubernetes->deleted)->toBe([])
+        // ...and still says what it would have taken away, which is the whole
+        // question somebody runs a dry run to answer.
+        ->and($outcome->swept->removed)->toBe(['HTTPScaledObject/acme']);
+});
+
+it('takes the leftover away before it applies, not after', function (): void {
+    // MEASURED IN THE WRONG ORDER FIRST. Sweeping after the apply is a race the
+    // sweep loses: the apply put two pods on the Deployment, the scaler that had
+    // not been deleted yet took it back to zero, and the sweep then removed the
+    // scaler — leaving the workload at zero with nothing left to raise it. The
+    // deploy after that was correct, which is not what a deploy is for.
+    $kubernetes = new RecordingKubernetes;
+    $kubernetes->listed = [ManifestDocument::fromArray([
+        'apiVersion' => 'http.keda.sh/v1alpha1',
+        'kind' => 'HTTPScaledObject',
+        'metadata' => [
+            'name' => 'acme',
+            'namespace' => 'cbox-acme',
+            'labels' => ['platform.cbox.dk/managed' => 'true'],
+        ],
+    ])];
+
+    new ProjectDeployer($kubernetes, new LocalTarget)->deploy(
+        (new ProjectManifestReader)->read(writeManifest("name: acme\nimage: acme/web:1\n").'/cbox.yaml')
+    );
+
+    $deleted = array_search('delete httpscaledobject/acme', $kubernetes->events, true);
+    $applied = array_search('apply Deployment/acme', $kubernetes->events, true);
+
+    expect($deleted)->toBeInt()
+        ->and($applied)->toBeInt()
+        ->and($deleted)->toBeLessThan($applied);
 });

@@ -19,7 +19,19 @@ readonly class ApplyOutcome
         public int $applied,
         public string $output,
         public string $failure = '',
+        /**
+         * What the same deploy took away. Empty from the applier itself, which
+         * only writes — a sweep is a decision about a whole project's set and
+         * belongs to whoever compiled it.
+         */
+        public Sweep $swept = new Sweep,
     ) {}
+
+    /** The same outcome, with what the deploy removed alongside it. */
+    public function including(Sweep $swept): self
+    {
+        return new self($this->succeeded, $this->applied, $this->output, $this->failure, $swept);
+    }
 
     /**
      * Whether this failed because something about the object cannot be changed.

@@ -26,12 +26,27 @@ readonly class ProjectState
         /** What the WEB process alone asks for, and has. */
         public int $webWanted = 0,
         public int $webRunning = 0,
+        /** Whether a scaler is watching for a request to raise this from zero. */
+        public bool $wakesOnRequest = false,
     ) {}
 
-    /** Everything is deliberately at zero — including its workers. */
+    /**
+     * Everything is deliberately at zero, and nothing is watching for a request.
+     *
+     * THE SECOND HALF IS THE WHOLE POINT, and leaving it out made this wrong for
+     * the commonest project there is. A scale-to-zero application with no worker
+     * has nothing left running once its web process idles down, so `wanted === 0`
+     * matched and status said "asleep — `cbox wake` brings it back" about a
+     * project that wakes itself on the next request. The distinction only
+     * survived for a project that happened to own a second process.
+     *
+     * Measured on the local cluster with a one-process project: deployed at
+     * zero, woken by a request in 6s, idled back down — and reported as put
+     * away, with an instruction nobody needed to follow.
+     */
     public function asleep(): bool
     {
-        return $this->wanted === 0;
+        return $this->wanted === 0 && ! $this->wakesOnRequest;
     }
 
     /**
