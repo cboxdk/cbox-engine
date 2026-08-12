@@ -20,12 +20,47 @@ use Symfony\Component\Process\Process;
 class ProcessCommandRunner implements CommandRunner
 {
     /**
+     * A child process that can find the things a user's tools expect.
+     *
+     * EVERY TOOL THIS DRIVES READS $HOME. kubectl looks for its kubeconfig there,
+     * kind and docker for their contexts, gh for its credentials — and a web
+     * process has no HOME at all, so from inside the desktop application kubectl
+     * answered "current-context is not set" and the window reported a running
+     * cluster as ABSENT. Nothing failed; everything just quietly described a
+     * different machine.
+     *
+     * Symfony inherits the parent environment, so this only ADDS what is missing:
+     * a shell that has HOME keeps its own, and nothing else about the environment
+     * is touched.
+     *
+     * @param  list<string>  $command
+     */
+    private function process(array $command): Process
+    {
+        $process = new Process($command);
+
+        if ((string) (getenv('HOME') ?: '') !== '') {
+            return $process;
+        }
+
+        $account = function_exists('posix_getpwuid') && function_exists('posix_geteuid')
+            ? posix_getpwuid(posix_geteuid())
+            : false;
+
+        if ($account !== false) {
+            $process->setEnv(['HOME' => $account['dir']]);
+        }
+
+        return $process;
+    }
+
+    /**
      * @param  list<string>  $command
      * @param  callable(string): void  $onOutput
      */
     public function stream(array $command, callable $onOutput, ?int $timeout = 30): CommandResult
     {
-        $process = new Process($command);
+        $process = $this->process($command);
         $process->setTimeout($timeout);
 
         try {
@@ -56,7 +91,7 @@ class ProcessCommandRunner implements CommandRunner
      */
     public function interactive(array $command): CommandResult
     {
-        $process = new Process($command);
+        $process = $this->process($command);
         // No bound: the person at the keyboard decides when a shell is over.
         $process->setTimeout(null);
 
@@ -87,7 +122,7 @@ class ProcessCommandRunner implements CommandRunner
      */
     public function run(array $command, int $timeout = 30, ?string $input = null): CommandResult
     {
-        $process = new Process($command);
+        $process = $this->process($command);
         $process->setTimeout($timeout);
 
         if ($input !== null) {

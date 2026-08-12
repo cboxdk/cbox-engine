@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Engine\Contracts\Kubernetes;
+use Cbox\Engine\Docker\ProcessCommandRunner;
 use Cbox\Engine\Kind\ClusterConfig;
 use Cbox\Engine\Project\Environment;
 use Cbox\Engine\Project\EnvironmentRegistry;
@@ -479,6 +480,38 @@ it('finds the home directory in a process with no HOME', function (): void {
         expect($config)->toBeInstanceOf(ClusterConfig::class)
             ->and($path->getValue($config))
             ->toBe(($account === false ? '' : $account['dir']).'/.cbox/kind.yaml');
+    } finally {
+        putenv('HOME='.(is_string($home) ? $home : ''));
+
+        if ($env !== null) {
+            $_ENV['HOME'] = $env;
+        }
+
+        if ($server !== null) {
+            $_SERVER['HOME'] = $server;
+        }
+    }
+});
+
+it('gives a child process a HOME when this one has none', function (): void {
+    // Every tool the engine drives reads $HOME: kubectl for its kubeconfig, kind and
+    // docker for their contexts, gh for its credentials. A web process has none, so
+    // from inside the desktop application kubectl answered "current-context is not
+    // set" and the window reported a RUNNING cluster as absent. Nothing failed;
+    // everything quietly described a different machine.
+    $home = getenv('HOME');
+    $env = $_ENV['HOME'] ?? null;
+    $server = $_SERVER['HOME'] ?? null;
+
+    putenv('HOME');
+    unset($_ENV['HOME'], $_SERVER['HOME']);
+    Env::getRepository()->clear('HOME');
+
+    try {
+        $result = (new ProcessCommandRunner)->run(['sh', '-c', 'printf %s "$HOME"']);
+
+        expect($result->successful())->toBeTrue()
+            ->and(trim($result->text()))->toBe((string) posix_getpwuid(posix_geteuid())['dir']);
     } finally {
         putenv('HOME='.(is_string($home) ? $home : ''));
 
