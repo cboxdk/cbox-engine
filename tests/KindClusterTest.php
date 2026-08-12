@@ -203,3 +203,19 @@ it('refuses to destroy with nobody there to ask', function (): void {
     expect($exit)->toBe(1)
         ->and(Artisan::output())->toContain('Refusing to destroy without --force');
 });
+
+it('cannot tell what it did not manage to ask', function (): void {
+    // With the container runtime stopped, `kind get clusters` RUNS, exits 1, and
+    // writes its complaint to stderr. Reading only stdout for our name found
+    // nothing and reported the cluster ABSENT — so the CLI offered to build a
+    // cluster that already existed, and the desktop window showed the same. The
+    // exit code is the only thing that separates "no clusters" from "could not ask".
+    $runner = (new FakeCommandRunner)->stage(
+        ['kind', 'get', 'clusters'],
+        new CommandResult(true, 1, '', 'ERROR: failed to list clusters: docker not running'),
+    );
+
+    $cluster = new KindCluster($runner, new ClusterConfig(sys_get_temp_dir().'/kind.yaml'));
+
+    expect($cluster->state()->phase)->toBe(ClusterPhase::Unknown);
+});

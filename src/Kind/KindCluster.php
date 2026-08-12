@@ -158,6 +158,18 @@ class KindCluster implements ClusterManager
             return ClusterPhase::Unknown;
         }
 
+        // A FAILED LISTING IS NOT AN EMPTY ONE, and only the exit code tells them
+        // apart. With the container runtime stopped, `kind get clusters` runs, exits
+        // 1, and prints its complaint to stderr — so reading only stdout for our name
+        // found nothing and called the cluster ABSENT. Both the CLI and the desktop
+        // then told somebody their cluster did not exist and offered to build it, over
+        // a cluster that was sitting there intact behind a runtime nobody had started.
+        // `Unknown` already renders as "could not tell — is the container runtime
+        // running?", which is the true answer and the useful one.
+        if (! $clusters->successful()) {
+            return ClusterPhase::Unknown;
+        }
+
         // kind exits 0 with a friendly sentence when there are none, so the
         // absence of our name is the answer rather than the exit code.
         if (! in_array(self::NAME, preg_split('/\R/', $clusters->text()) ?: [], true)) {
