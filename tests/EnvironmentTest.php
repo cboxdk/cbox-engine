@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Cbox\Engine\Contracts\Kubernetes;
+use Cbox\Engine\Kind\ClusterConfig;
 use Cbox\Engine\Project\Environment;
 use Cbox\Engine\Project\EnvironmentRegistry;
 use Cbox\Engine\Project\ProjectDeployer;
@@ -12,6 +13,7 @@ use Cbox\Engine\Tests\RecordingKubernetes;
 use Cbox\Engine\ValueObjects\CommandResult;
 use Cbox\Engine\ValueObjects\DeployedEnvironment;
 use Cbox\Engine\ValueObjects\ManifestDocument;
+use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Artisan;
 
 /*
@@ -447,4 +449,45 @@ it('does not wait for pods a project deliberately has none of', function (): voi
 
     expect($exit)->toBe(0)
         ->and(microtime(true) - $started)->toBeLessThan(5.0);
+});
+
+it('finds the home directory in a process with no HOME', function (): void {
+    // A web process has none: php-fpm and `artisan serve` both hand a request an
+    // environment without it, and this threw there — so the desktop application
+    // answered 500 on the endpoint its window polls while every CLI command and
+    // every test passed. The suite only ever ran in the process that was fine.
+    // ALL THREE. `Illuminate\Support\Env` reads $_ENV and $_SERVER as well as
+    // getenv(), so clearing only the last one leaves HOME perfectly findable — the
+    // first version of this test passed with the fallback deleted, which is the
+    // definition of proving nothing.
+    $home = getenv('HOME');
+    $env = $_ENV['HOME'] ?? null;
+    $server = $_SERVER['HOME'] ?? null;
+
+    putenv('HOME');
+    unset($_ENV['HOME'], $_SERVER['HOME']);
+    Env::getRepository()->clear('HOME');
+
+    try {
+        $config = app(ClusterConfig::class);
+
+        $path = (new ReflectionClass($config))->getProperty('path');
+        $path->setAccessible(true);
+
+        $account = posix_getpwuid(posix_geteuid());
+
+        expect($config)->toBeInstanceOf(ClusterConfig::class)
+            ->and($path->getValue($config))
+            ->toBe(($account === false ? '' : $account['dir']).'/.cbox/kind.yaml');
+    } finally {
+        putenv('HOME='.(is_string($home) ? $home : ''));
+
+        if ($env !== null) {
+            $_ENV['HOME'] = $env;
+        }
+
+        if ($server !== null) {
+            $_SERVER['HOME'] = $server;
+        }
+    }
 });
