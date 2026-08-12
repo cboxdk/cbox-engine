@@ -104,6 +104,19 @@ class ProjectDeployer
             }
         }
 
+        // THE SIBLINGS THIS PROJECT IS LINKED TO. A composer path repository
+        // installs a package as a symlink out of the project, which resolves on
+        // the machine and dangles in the pod — the application boots under Herd
+        // and the container dies naming a file that is plainly there. Mounted
+        // alongside the source, so the link lands on something.
+        if ($manifest->fromSource) {
+            $linked = (new LinkedPackages)->forProject($manifest->path, $manifest->mountPath);
+
+            if ($linked !== []) {
+                $manifest = $manifest->alsoMounting($linked);
+            }
+        }
+
         $target = $this->target->make($this->ports);
 
         // THE DATABASES FIRST, and their connection details before the service

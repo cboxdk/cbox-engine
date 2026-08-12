@@ -209,6 +209,51 @@ readonly class ProjectManifest
      * which is what makes a rebuild actually roll out. A fixed tag means the pod
      * spec never changes and every edit appears to do nothing.
      */
+    /**
+     * The same project with more directories mounted into it.
+     *
+     * @param  list<SourceMount>  $mounts
+     */
+    public function alsoMounting(array $mounts): self
+    {
+        $combined = $this->mounts;
+
+        foreach ($mounts as $mount) {
+            // What the manifest says wins: somebody who wrote a `mounts:` entry
+            // for a path meant that one, and a link discovered underneath it is
+            // the guess.
+            foreach ($this->mounts as $existing) {
+                if ($existing->mountPath === $mount->mountPath) {
+                    continue 2;
+                }
+            }
+
+            $combined[] = $mount;
+        }
+
+        return new self(
+            name: $this->name,
+            image: $this->image,
+            port: $this->port,
+            domains: $this->domains,
+            env: $this->env,
+            processes: $this->processes,
+            replicas: $this->replicas,
+            resources: $this->resources,
+            scaleToZero: $this->scaleToZero,
+            idleSeconds: $this->idleSeconds,
+            suspended: $this->suspended,
+            environment: $this->environment,
+            path: $this->path,
+            urlVariable: $this->urlVariable,
+            fromSource: $this->fromSource,
+            build: $this->build,
+            services: $this->services,
+            mountPath: $this->mountPath,
+            mounts: $combined,
+        );
+    }
+
     public function runningImage(string $image): self
     {
         return new self(
