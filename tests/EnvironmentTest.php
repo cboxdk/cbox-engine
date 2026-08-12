@@ -5,10 +5,12 @@ declare(strict_types=1);
 use Cbox\Engine\Contracts\Kubernetes;
 use Cbox\Engine\Docker\ProcessCommandRunner;
 use Cbox\Engine\Kind\ClusterConfig;
+use Cbox\Engine\Platform\LocalAuthority;
 use Cbox\Engine\Project\Environment;
 use Cbox\Engine\Project\EnvironmentRegistry;
 use Cbox\Engine\Project\ProjectDeployer;
 use Cbox\Engine\Project\WorktreeEnvironment;
+use Cbox\Engine\Support\Home;
 use Cbox\Engine\Testing\FakeCommandRunner;
 use Cbox\Engine\Tests\RecordingKubernetes;
 use Cbox\Engine\ValueObjects\CommandResult;
@@ -512,6 +514,40 @@ it('gives a child process a HOME when this one has none', function (): void {
 
         expect($result->successful())->toBeTrue()
             ->and(trim($result->text()))->toBe((string) posix_getpwuid(posix_geteuid())['dir']);
+    } finally {
+        putenv('HOME='.(is_string($home) ? $home : ''));
+
+        if ($env !== null) {
+            $_ENV['HOME'] = $env;
+        }
+
+        if ($server !== null) {
+            $_SERVER['HOME'] = $server;
+        }
+    }
+});
+
+it('gives one answer for the home directory, everywhere it is asked', function (): void {
+    // Four callers each answered differently: one threw, one built `/.cbox/ca` at
+    // the root of the filesystem, one dropped the `~` and read `/x`, one worked.
+    // The two that did not throw are the dangerous ones — a wrong path is not an
+    // error anybody sees.
+    $home = getenv('HOME');
+    $env = $_ENV['HOME'] ?? null;
+    $server = $_SERVER['HOME'] ?? null;
+
+    putenv('HOME');
+    unset($_ENV['HOME'], $_SERVER['HOME']);
+    Env::getRepository()->clear('HOME');
+
+    try {
+        $expected = (string) posix_getpwuid(posix_geteuid())['dir'];
+
+        expect(Home::directory())->toBe($expected)
+            // No leading-root paths, and no silently dropped tilde.
+            ->and(Home::expand('~/.cbox/ca'))->toBe($expected.'/.cbox/ca')
+            ->and(Home::expand('/etc/absolute'))->toBe('/etc/absolute')
+            ->and(app(LocalAuthority::class)->certificatePath())->toBe($expected.'/.cbox/ca/ca.crt');
     } finally {
         putenv('HOME='.(is_string($home) ? $home : ''));
 

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Cbox\Engine\Docker;
 
 use Cbox\Engine\Contracts\CommandRunner;
+use Cbox\Engine\Support\Home;
 use Cbox\Engine\ValueObjects\CommandResult;
+use RuntimeException;
 use Symfony\Component\Process\Exception\ExceptionInterface;
 use Symfony\Component\Process\Process;
 
@@ -43,12 +45,12 @@ class ProcessCommandRunner implements CommandRunner
             return $process;
         }
 
-        $account = function_exists('posix_getpwuid') && function_exists('posix_geteuid')
-            ? posix_getpwuid(posix_geteuid())
-            : false;
-
-        if ($account !== false) {
-            $process->setEnv(['HOME' => $account['dir']]);
+        try {
+            $process->setEnv(['HOME' => Home::directory()]);
+        } catch (RuntimeException) {
+            // Nothing to pass on. The child will fail its own way, which is a
+            // better message than one invented here about a directory that does
+            // not exist.
         }
 
         return $process;

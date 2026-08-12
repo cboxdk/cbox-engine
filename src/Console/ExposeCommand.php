@@ -8,6 +8,7 @@ use Cbox\Engine\Contracts\Kubernetes;
 use Cbox\Engine\Platform\ClusterObjects;
 use Cbox\Engine\Platform\GatewayAddress;
 use Cbox\Engine\Project\ProjectLocator;
+use Cbox\Engine\Support\Home;
 use Cbox\Engine\Tunnel\CloudflareTunnel;
 use Cbox\Engine\Tunnel\TunnelMode;
 use Cbox\Engine\Tunnel\TunnelRoute;
@@ -169,9 +170,9 @@ class ExposeCommand extends Command
 
     private function read(string $path): string
     {
-        $expanded = str_starts_with($path, '~/')
-            ? (getenv('HOME') ?: '').substr($path, 1)
-            : $path;
+        // `~/x` became `/x` when HOME was unset — a path at the filesystem root,
+        // read without complaint. Home::expand refuses rather than inventing one.
+        $expanded = Home::expand($path);
 
         $contents = is_file($expanded) ? file_get_contents($expanded) : false;
 

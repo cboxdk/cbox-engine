@@ -56,12 +56,11 @@ use Cbox\Engine\Project\ProjectDeployer;
 use Cbox\Engine\Project\ProjectManifestReader;
 use Cbox\Engine\Project\ProjectRegistry;
 use Cbox\Engine\Project\SidecarCompiler;
-use Cbox\Engine\Support\Env;
+use Cbox\Engine\Support\Home;
 use Cbox\Engine\Tunnel\CloudflareTunnel;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\ServiceProvider;
-use RuntimeException;
 
 /**
  * The engine's bindings.
@@ -73,41 +72,6 @@ use RuntimeException;
  */
 class EngineServiceProvider extends ServiceProvider
 {
-    /**
-     * The developer's home directory — asked of the OS when the environment is silent.
-     *
-     * `HOME` IS A SHELL CONVENTION, NOT A GUARANTEE. It is always set for a command
-     * somebody typed and frequently absent in a web process: php-fpm and `artisan
-     * serve` both hand a request an environment with no HOME at all. This threw
-     * there, so the desktop application — the same engine behind a window — answered
-     * 500 on the endpoint the window polls, while every CLI command and every test
-     * passed. The process the code runs in was the difference, and nothing in the
-     * suite ran in the other one.
-     *
-     * `posix_getpwuid` asks the passwd database for the running user's directory,
-     * which is the fact `HOME` is usually a copy of. Refused only when neither
-     * knows — a machine with no home directory for its own user is one where there
-     * is genuinely nowhere to put this.
-     */
-    private static function home(): string
-    {
-        $home = Env::string('HOME', '');
-
-        if ($home === '' && function_exists('posix_getpwuid') && function_exists('posix_geteuid')) {
-            $account = posix_getpwuid(posix_geteuid());
-            $home = $account === false ? '' : $account['dir'];
-        }
-
-        if ($home === '') {
-            throw new RuntimeException(
-                'There is no home directory for this user — neither HOME nor the passwd database '
-                .'names one — so there is nowhere to keep this machine\'s cluster.',
-            );
-        }
-
-        return rtrim($home, '/');
-    }
-
     /**
      * Everything the consumer gets: the commands, and the versions they pin.
      *
@@ -195,7 +159,7 @@ class EngineServiceProvider extends ServiceProvider
         // artefact of an install.
         $this->app->singleton(LocalAuthority::class, fn (Container $app): LocalAuthority => new LocalAuthority(
             $app->make(Kubernetes::class),
-            rtrim(Env::string('HOME', ''), '/').'/.cbox/ca',
+            Home::directory().'/.cbox/ca',
         ));
 
         $this->app->singleton(
@@ -242,7 +206,7 @@ class EngineServiceProvider extends ServiceProvider
                 // a path relative to whichever of them happens to be running
                 // would give them two — the same reason the certificate
                 // authority lives there. See LocalAuthority.
-                self::home().'/.cbox/kind.yaml',
+                Home::directory().'/.cbox/kind.yaml',
                 $app->make(HostPorts::class),
             ),
         );

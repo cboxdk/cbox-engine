@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Cbox\Engine\Kind;
 
-use Cbox\Engine\Support\Env;
+use Cbox\Engine\Support\Home;
 use RuntimeException;
 
 /**
@@ -170,18 +170,11 @@ class ClusterConfig
      *
      * Their home, and it has to be somewhere kind can mount: an empty HOME would
      * mount `/` into the node, which is the one outcome worth refusing outright.
+     * {@see Home} refuses both an empty answer and a bare `/` for that reason,
+     * and is the single answer the whole engine uses.
      */
     private function home(): string
     {
-        $home = Env::string('HOME', '');
-
-        if ($home === '' || $home === '/') {
-            throw new RuntimeException(
-                'This machine has no home directory set, so there is nowhere to mount for running code '
-                .'from a working copy. Set HOME and try again.',
-            );
-        }
-
-        return rtrim($home, '/');
+        return Home::directory();
     }
 }
