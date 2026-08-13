@@ -44,4 +44,6 @@ running would give them two.
 composer qa
 ```
 
-Pint, PHPStan at level max with larastan, and Pest.
+Pint, PHPStan at level max with larastan, Pest, the dependency license gate, and
+`composer audit`. CI runs the same on PHP 8.4 and 8.5, and additionally checks
+that the committed `sbom.json` still matches the lock it describes.

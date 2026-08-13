@@ -53,7 +53,13 @@ class StatusCommand extends Command
             ClusterPhase::Running => "  <fg=green>●</> [{$state->name}] running — kubectl context {$state->context}",
             ClusterPhase::Stopped => "  <fg=yellow>○</> [{$state->name}] stopped. `cbox up` starts it in seconds.",
             ClusterPhase::Absent => "  <fg=gray>○</> [{$state->name}] does not exist. `cbox up` builds it.",
-            ClusterPhase::Unknown => '  <fg=red>?</> Could not tell — is the container runtime running?',
+            // THE REASON WHEN THERE IS ONE, and the question only when there is
+            // not. "Is the container runtime running?" is the right guess when
+            // kind ran and failed, and a wrong accusation when kind never
+            // started — see {@see \Cbox\Engine\Kind\KindCluster::phase()}.
+            ClusterPhase::Unknown => $state->failure !== ''
+                ? "  <fg=red>?</> Could not tell — {$state->failure}"
+                : '  <fg=red>?</> Could not tell — is the container runtime running?',
         });
 
         if ($deployed === []) {

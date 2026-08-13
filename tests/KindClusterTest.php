@@ -219,3 +219,30 @@ it('cannot tell what it did not manage to ask', function (): void {
 
     expect($cluster->state()->phase)->toBe(ClusterPhase::Unknown);
 });
+
+it('does not blame the container runtime for a process that never started', function (): void {
+    // MEASURED FROM A DELETED DIRECTORY, which is the exact situation `cbox
+    // prune` exists for: every child process fails to start, and the runner says
+    // precisely why. That was discarded and reported as a stopped runtime,
+    // sending somebody to restart something that was never the problem.
+    $runner = new FakeCommandRunner;
+
+    $state = (new KindCluster($runner, new ClusterConfig(sys_get_temp_dir().'/kind.yaml')))->state();
+
+    expect($state->phase)->toBe(ClusterPhase::Unknown)
+        ->and($state->failure)->toContain('nothing staged');
+});
+
+it('still asks about the runtime when kind ran and failed', function (): void {
+    // kind runs, exits 1 and complains to stderr when the runtime is stopped.
+    // There the question is the true answer and the useful one.
+    $runner = (new FakeCommandRunner)->stage(
+        ['kind', 'get', 'clusters'],
+        new CommandResult(true, 1, '', 'cannot connect to the Docker daemon'),
+    );
+
+    $state = (new KindCluster($runner, new ClusterConfig(sys_get_temp_dir().'/kind.yaml')))->state();
+
+    expect($state->phase)->toBe(ClusterPhase::Unknown)
+        ->and($state->failure)->toBe('');
+});

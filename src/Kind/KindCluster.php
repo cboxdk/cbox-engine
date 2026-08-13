@@ -147,14 +147,33 @@ class KindCluster implements ClusterManager
             $phase,
             changed: false,
             context: $phase === ClusterPhase::Running ? self::CONTEXT : '',
+            failure: $this->unknownBecause,
         );
     }
 
+    /**
+     * Why the last {@see phase()} could not tell, when the reason is knowable.
+     *
+     * Set on every call, so it never describes an older one.
+     */
+    private string $unknownBecause = '';
+
     private function phase(): ClusterPhase
     {
+        $this->unknownBecause = '';
+
         $clusters = $this->runner->run(['kind', 'get', 'clusters'], timeout: 30);
 
         if (! $clusters->ran) {
+            // THE PROCESS NEVER STARTED, which is a different fact from "kind
+            // ran and said no", and it has a different answer. Measured: from a
+            // directory that has been deleted — the exact situation `cbox prune`
+            // exists for — every child process fails to start, and the runner
+            // says precisely why ("The provided cwd ... does not exist"). That
+            // was thrown away and reported as a stopped container runtime,
+            // sending somebody to restart something that was never the problem.
+            $this->unknownBecause = $clusters->failure;
+
             return ClusterPhase::Unknown;
         }
 
