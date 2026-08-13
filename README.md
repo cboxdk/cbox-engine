@@ -27,6 +27,12 @@ Gateway, cert-manager, CloudNativePG and KEDA, pinned to the versions a Cortex
 cell runs. They ship with the engine rather than with a consumer, because a copy
 per consumer is a copy that drifts.
 
+## Documentation
+
+[`docs/`](docs/index.md) — start at the [quickstart](docs/quickstart.md), or
+[what a deploy does](docs/core-concepts/lifecycle.md) if you want the part that
+is least like other tools.
+
 ## Using it
 
 ```bash
