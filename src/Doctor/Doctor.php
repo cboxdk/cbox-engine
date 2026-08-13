@@ -62,16 +62,18 @@ class Doctor
     }
 
     /**
-     * The one finding that is neither good news nor bad news.
+     * The finding that used to be neither good news nor bad news.
      *
-     * The Cbox base images are published for linux/amd64 only. On Apple Silicon
-     * the production image therefore runs under emulation: it is the same image
-     * and it behaves the same, which is the point — but it is slower, and a
-     * developer who is not told will reasonably conclude the tool is slow.
+     * IT WAS A WARNING, AND IT IS NOT ONE ANY MORE. The Cbox base images were
+     * published for linux/amd64 only, so on Apple Silicon the production image
+     * ran under emulation — the same image behaving the same way, but slower,
+     * and a developer who was not told would reasonably conclude the tool was
+     * slow. Every tier is built natively for both architectures now.
      *
-     * Stated as a warning rather than hidden, and rather than treated as a
-     * failure: an emulated image still proves everything about proxy headers,
-     * routing, processes and scaling that this product exists to prove.
+     * Kept as a finding rather than deleted, because "which architecture is this
+     * and is it covered" is still worth answering plainly — and because the
+     * answer is the one that explains a `no match for platform` on somebody
+     * else's image.
      */
     private function architecture(Architecture $architecture): Finding
     {
@@ -83,9 +85,9 @@ class Doctor
             // WAS A WARNING UNTIL THE IMAGES EXISTED, and a stale warning is
             // worse than none: it tells somebody their machine is the problem
             // long after it stopped being. The PHP tiers are built natively for
-            // arm64 now; `cboxdk/percona` is the one that is not, and a project
-            // that asks for MySQL is told so where it happens rather than here,
-            // where it would be a warning most people do not need.
+            // arm64, and so is `cboxdk/percona` — which was the last exception
+            // and was checked against the registry rather than remembered, this
+            // comment having outlived its own truth once already.
             return Finding::ok('Architecture', 'arm64. The Cbox base images are built for it natively.');
         }
 

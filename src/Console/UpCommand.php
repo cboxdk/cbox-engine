@@ -22,8 +22,9 @@ use Illuminate\Console\Command;
  * plumbing, minutes later, with an error about a socket — when the answer was
  * knowable in fifteen milliseconds and is "start OrbStack".
  *
- * A warning does not stop it. arm64 means the base images run emulated, which is
- * worth saying once and is not a reason to refuse to work.
+ * A warning does not stop it. What doctor reports is a finding about the machine,
+ * not a verdict on whether the cluster can come up, and most findings are worth
+ * saying once rather than refusing over.
  */
 class UpCommand extends Command
 {

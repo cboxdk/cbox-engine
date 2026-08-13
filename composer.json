@@ -66,10 +66,14 @@
         "lint": "pint --test",
         "analyse": "phpstan analyse --no-progress --memory-limit=1G",
         "test": "pest",
+        "license-check": "php bin/check-licenses.php",
+        "sbom": "php bin/generate-sbom.php",
         "qa": [
             "@lint",
             "@analyse",
-            "@test"
+            "@test",
+            "@license-check",
+            "composer audit --no-dev"
         ]
     },
     "config": {

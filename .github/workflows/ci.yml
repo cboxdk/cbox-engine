@@ -7,9 +7,10 @@ on:
 
 jobs:
   qa:
-    # SELF-HOSTED, because this repository is private and hosted runners are
-    # blocked for the organisation. A job that cannot start reports exactly like
-    # a job that ran and failed.
+    # SELF-HOSTED, because hosted runners are blocked for the organisation. This
+    # repository is public now, which may well lift that — but a runner change is
+    # only knowable by trying it, and a job that cannot start reports exactly like
+    # a job that ran and failed. Left on the runner that demonstrably works.
     runs-on: [self-hosted, linux, x64, cbox]
     strategy:
       fail-fast: false
@@ -31,3 +32,13 @@ jobs:
       - run: vendor/bin/phpstan analyse --no-progress --memory-limit=2G
 
       - run: vendor/bin/pest
+
+      - run: composer audit --no-dev
+
+      - run: composer license-check
+
+      # THE COMMITTED SBOM HAS TO MATCH THE LOCK IT DESCRIBES. It is generated
+      # deterministically from composer.lock — sorted components, a serial number
+      # derived from the content — so it changes only when dependencies do, and a
+      # diff here means somebody changed a dependency without regenerating it.
+      - run: composer sbom && git diff --exit-code sbom.json
