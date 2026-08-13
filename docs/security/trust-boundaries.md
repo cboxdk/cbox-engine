@@ -20,11 +20,11 @@ the boundary anyway would be complexity bought with nothing.
 
 ## The one elevation
 
-`cbox local setup` runs `sudo tee /etc/resolver/<domain>`. One file, so macOS
+`cbox setup` runs `sudo tee /etc/resolver/<domain>`. One file, so macOS
 knows where to ask about `*.cbox.test`.
 
 That is the whole of it. Creating the cluster, installing addons, deploying,
-building images and issuing certificates all run as you. `cbox local uninstall`
+building images and issuing certificates all run as you. `cbox uninstall`
 prints the `sudo rm` for that file rather than running it — removing a file it
 did not have to elevate to remove would be a worse habit than asking.
 
@@ -33,7 +33,7 @@ did not have to elevate to remove would be a worse habit than asking.
 An authority is created in `~/.cbox` and signs the certificates behind
 `https://<project>.cbox.test`. Its private key never leaves that directory.
 
-`cbox local trust` shows how to trust it, and installs into the **login**
+`cbox trust` shows how to trust it, and installs into the **login**
 keychain rather than the System one: it needs no `sudo`, and a certificate
 authority in the System store is trusted by every user on the machine, which is
 more than this needs.
@@ -50,9 +50,9 @@ credentials, not a place for production ones.
 
 ## The two features that widen the surface
 
-**`cbox local expose`** puts a tunnel in front of a project so it can be reached
+**`cbox expose`** puts a tunnel in front of a project so it can be reached
 from the internet — that is the point of it, and the exposure is real for as long
-as it runs. `cbox local unexpose` takes it down and takes the credentials away
+as it runs. `cbox unexpose` takes it down and takes the credentials away
 with the connector, in that order.
 
 **`mounts:`** gives a container a host directory. It is your machine's filesystem

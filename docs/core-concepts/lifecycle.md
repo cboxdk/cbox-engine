@@ -66,7 +66,7 @@ file — it is the difference between the file and the cluster.
 
 ## The four states
 
-`cbox local status` reports one of four things per project, and telling them
+`cbox status` reports one of four things per project, and telling them
 apart is the whole point: two of them show no web pod.
 
 | State | Means | What to do |

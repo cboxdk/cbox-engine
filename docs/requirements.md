@@ -51,7 +51,7 @@ Two things have to be on the machine, and neither is a Composer dependency:
 - **A container runtime** — Docker or OrbStack. The cluster is a container.
 - **`kind` and `kubectl`** on the `PATH`.
 
-`cbox local doctor` checks all of it and names what is missing. It is the first
+`cbox doctor` checks all of it and names what is missing. It is the first
 command to run on a new machine, and the only one that can explain why the rest
 do not work.
 
@@ -59,5 +59,5 @@ do not work.
 
 macOS and Linux. The one platform-specific piece is how a machine is taught to
 resolve `*.cbox.test`: on macOS that is `/etc/resolver/cbox.test`, written by
-`cbox local setup`. See [HostResolver](extension-points/contracts.md) for the
+`cbox setup`. See [HostResolver](extension-points/contracts.md) for the
 seam that decides it.

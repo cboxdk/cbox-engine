@@ -31,6 +31,22 @@ interface HostResolver
     public function path(): string;
 
     /**
+     * Whether a name under the development domain actually resolves here.
+     *
+     * THE OUTCOME, NOT THE ARTEFACT, and the difference is not academic. The
+     * file this writes is one way a machine learns the domain and not the only
+     * one: any resolver covering the parent `.test` — another local development
+     * tool, a dnsmasq somebody set up years ago — answers for it too.
+     *
+     * Measured on a machine with exactly that. `/etc/resolver/cbox.test` was
+     * absent, so doctor reported "this machine has not been told where to ask"
+     * and warned that projects would open in curl and not in a browser. They
+     * opened in a browser the whole time. A checker that reads its own file and
+     * infers the world from it is the thing this class exists not to be.
+     */
+    public function resolves(): bool;
+
+    /**
      * The exact command a person would run to write it.
      *
      * Returned rather than executed, because writing it needs a password this

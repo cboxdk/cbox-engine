@@ -24,14 +24,30 @@ function docker(): array
     return ['docker', 'info', '--format', '{{.OperatingSystem}}|{{.Architecture}}|{{.ServerVersion}}'];
 }
 
-function doctorWith(FakeCommandRunner $runner, bool $resolves = true): Doctor
+function doctorWith(FakeCommandRunner $runner, bool $resolves = true, bool $resolvesAnyway = false): Doctor
 {
     // A resolver directory in a temporary place, written or not. A test that
     // needed /etc/resolver would be a test nobody runs.
     $directory = sys_get_temp_dir().'/cbox-resolver-'.getmypid().'-'.($resolves ? 'ok' : 'no');
     @mkdir($directory, 0755, true);
 
-    $resolver = new MacResolver(HostPorts::high(), $directory);
+    // AND THE ACTUAL LOOKUP IS PINNED, because the real one asks this machine.
+    // A developer with any other tool covering `.test` would otherwise see a
+    // different answer from the same test than CI does — which is the class of
+    // fixture that reads as flaky and is really a test asking the world a
+    // question it should have been told.
+    $resolver = new class(HostPorts::high(), $directory, $resolvesAnyway) extends MacResolver
+    {
+        public function __construct(HostPorts $ports, string $directory, private readonly bool $answer)
+        {
+            parent::__construct($ports, $directory);
+        }
+
+        public function resolves(): bool
+        {
+            return $this->answer;
+        }
+    };
 
     if ($resolves) {
         file_put_contents($resolver->path(), $resolver->desired());
@@ -149,4 +165,26 @@ it('says nothing about hostnames when the machine already resolves them', functi
     )), resolves: true);
 
     expect($doctor->verdict($doctor->examine()))->toBe(Severity::Ok);
+});
+
+it('does not tell a machine it cannot resolve what it plainly resolves', function (): void {
+    // MEASURED ON A REAL MACHINE. `/etc/resolver/cbox.test` was absent, so this
+    // reported "this machine has not been told where to ask about the domain"
+    // and warned that projects would open in curl and not in a browser — while
+    // every project on it was opening in a browser, through another local
+    // development tool's resolver for the parent `.test`.
+    //
+    // A checker that reads its own file and infers the world from it is the
+    // thing this class exists not to be.
+    $doctor = doctorWith((new FakeCommandRunner)->stage(docker(), new CommandResult(
+        ran: true, exitCode: 0, output: 'OrbStack|arm64|29.4.0', errorOutput: '',
+    )), resolves: false, resolvesAnyway: true);
+
+    $hostnames = collect($doctor->examine())->firstWhere('subject', 'Hostnames');
+
+    expect($hostnames->severity)->toBe(Severity::Ok)
+        ->and($hostnames->detail)->toContain('resolves here')
+        // ...and still says whose file it is leaning on, because it leaves when
+        // that tool does.
+        ->and($hostnames->detail)->toContain('did not write');
 });

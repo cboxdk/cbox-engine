@@ -26,7 +26,7 @@ local:uninstall local:up        local:wake
 ```
 
 In your application they are `php artisan local:deploy`. In the `cbox` binary
-they are `cbox local deploy` — and `cbox local:deploy`, which is the same command
+they are `cbox deploy` — and `cbox local:deploy`, which is the same command
 reached through an argv fold rather than a second registration.
 
 **Merges `config/cbox.php`.** Addon versions and the tunnel image, all pinned.

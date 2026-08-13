@@ -64,4 +64,4 @@ unreachable and unwakeable.
 ```
 
 If you want to know what a change will take away before making it,
-`cbox local deploy --dry-run` says so and changes nothing.
+`cbox deploy --dry-run` says so and changes nothing.

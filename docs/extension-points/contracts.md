@@ -49,9 +49,16 @@ a kind is served yet.
 
 ## HostResolver
 
-How this machine is taught to resolve a domain. On macOS that is one file in
-`/etc/resolver`. This is the seam that makes the platform-specific part
-replaceable rather than a conditional in the middle of a command.
+How this machine is taught to resolve a domain, and whether it currently does.
+On macOS the file is one entry in `/etc/resolver`. This is the seam that makes
+the platform-specific part replaceable rather than a conditional in the middle of
+a command.
+
+`resolves()` asks the **outcome**, not the artefact, and the difference is not
+academic: any resolver covering the parent `.test` answers for this domain too.
+A machine with one needs nothing from us, and a check that read only its own file
+told such a machine that projects would open in curl and not in a browser while
+they were opening in a browser.
 
 ## HttpProbe
 

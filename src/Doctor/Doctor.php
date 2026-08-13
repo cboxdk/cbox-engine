@@ -119,6 +119,24 @@ class Doctor
             return Finding::ok('Hostnames', 'This machine resolves the development domain.');
         }
 
+        // IT RESOLVES, WHOEVER MADE IT RESOLVE. Any resolver covering the parent
+        // `.test` answers for this domain too, and a machine with one needs
+        // nothing from us. Reported as the good news it is, with the one thing
+        // worth knowing: it is somebody else's file, and it leaves when they do.
+        //
+        // Measured on exactly such a machine, where this said "a project opens
+        // in curl and not in a browser" while projects were opening in a
+        // browser. A check that reads its own file and infers the world from it
+        // is what this class exists not to be.
+        if ($this->resolver->resolves()) {
+            return Finding::ok(
+                'Hostnames',
+                'The development domain resolves here, through a resolver this tool did not write — '
+                    .'another local development tool covering `.test` will do it. '
+                    .'`cbox setup` writes Cbox\'s own if you would rather not depend on that.',
+            );
+        }
+
         if ($state->present) {
             return Finding::warning(
                 'Hostnames',

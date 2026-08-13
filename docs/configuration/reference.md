@@ -52,7 +52,7 @@ manifest, so installing an addon reaches no chart repository at all.
 |---|---|
 | `CBOX_TUNNEL_IMAGE` | `cloudflare/cloudflared:2026.7.3` |
 
-The connector `cbox local expose` runs. Pinned like everything else: `latest` on
+The connector `cbox expose` runs. Pinned like everything else: `latest` on
 a component that sits in the request path means two developers debugging the same
 problem on different builds.
 

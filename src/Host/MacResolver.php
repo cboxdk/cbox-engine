@@ -95,4 +95,24 @@ class MacResolver implements HostResolver
 
         return $lines;
     }
+
+    /**
+     * Ask the system resolver for a name nobody would ever deploy.
+     *
+     * `gethostbyname()` AND NOT `dns_get_record()`. The first goes through
+     * `getaddrinfo`, which is what a browser uses and therefore the only thing
+     * that answers the question being asked; the second talks to a name server
+     * directly and never sees `/etc/resolver` at all. Checking with the second
+     * would report "no" on a machine where every browser says yes.
+     *
+     * A name that cannot exist, so this measures the DOMAIN rather than whatever
+     * happens to be deployed — and unresolvable returns the input unchanged,
+     * which is the whole test.
+     */
+    public function resolves(): bool
+    {
+        $probe = 'resolver-probe.'.ClusterObjects::DOMAIN;
+
+        return gethostbyname($probe) !== $probe;
+    }
 }

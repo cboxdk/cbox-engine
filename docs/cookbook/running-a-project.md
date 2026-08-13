@@ -33,7 +33,7 @@ services:
 ```
 
 ```bash
-cbox local deploy
+cbox deploy
 ```
 
 ## What each part bought you
@@ -61,10 +61,10 @@ port and a name to reach them by, and nothing else — no volumes, no backups.
 ## Running commands inside it
 
 ```bash
-cbox local artisan migrate
-cbox local composer install
-cbox local npm run build
-cbox local run -- php -i
+cbox artisan migrate
+cbox composer install
+cbox npm run build
+cbox run -- php -i
 ```
 
 A developer platform that cannot run a command inside the thing it is running is
@@ -74,8 +74,8 @@ a tool.
 ## Watching it
 
 ```bash
-cbox local logs            # what it is saying
-cbox local logs -f         # keep the stream open
+cbox logs            # what it is saying
+cbox logs -f         # keep the stream open
 ```
 
 Logs are prefixed with the pod they came from. Three replicas interleaved into
@@ -84,7 +84,7 @@ one stream is a log nobody can read.
 ## When it will not start
 
 ```bash
-cbox local status
+cbox status
 ```
 
 `degraded` means something that should be running is not, and `cbox logs` says
@@ -95,9 +95,9 @@ rather than sending you to check the tag.
 ## Reaching it from outside the machine
 
 ```bash
-cbox local expose
+cbox expose
 ```
 
 A tunnel, for a phone on mobile data or a webhook from a payment provider calling
-a backend that only exists on this laptop. `cbox local unexpose` takes it down,
+a backend that only exists on this laptop. `cbox unexpose` takes it down,
 and takes the credentials with the connector rather than leaving them behind.

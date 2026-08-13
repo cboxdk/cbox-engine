@@ -11,10 +11,13 @@ adding the engine to your own application instead, read
 [Installation](getting-started/installation.md) first — the commands below are
 the same either way, as `php artisan local:*`.
 
+**Local commands need no namespace.** `cbox up`, `cbox local up` and
+`cbox local:up` are one command; the short form is used from here on.
+
 ## 1. Check the machine
 
 ```bash
-cbox local doctor
+cbox doctor
 ```
 
 It reports what it measured on the machine in front of it: whether a container
@@ -25,7 +28,7 @@ tells you how to fix.
 ## 2. Bring the cluster up
 
 ```bash
-cbox local up
+cbox up
 ```
 
 One kind cluster per machine, created if it is not there and started if it is.
@@ -38,7 +41,7 @@ This takes a couple of minutes the first time and seconds afterwards.
 ## 3. Teach the machine to resolve the hostnames
 
 ```bash
-cbox local setup
+cbox setup
 ```
 
 Asks for a password **once**, to write one file: `/etc/resolver/cbox.test`. That
@@ -62,7 +65,7 @@ Three lines is a whole project. Every other key has a default, and
 ## 5. Deploy
 
 ```bash
-cbox local deploy
+cbox deploy
 ```
 
 ```
@@ -71,13 +74,13 @@ cbox local deploy
 ```
 
 The hostname is real, the certificate is real, and it is signed by an authority
-this machine created — `cbox local trust` shows how to trust it, if your browser
+this machine created — `cbox trust` shows how to trust it, if your browser
 does not already.
 
 ## 6. See what is running
 
 ```bash
-cbox local status
+cbox status
 ```
 
 ```
@@ -89,9 +92,9 @@ cbox local status
 ## 7. Put it away
 
 ```bash
-cbox local sleep      # stops the compute, keeps the data
-cbox local wake       # brings it back
-cbox local remove     # takes the project and its data off the cluster
+cbox sleep      # stops the compute, keeps the data
+cbox wake       # brings it back
+cbox remove     # takes the project and its data off the cluster
 ```
 
 `sleep` is the one to reach for between projects: a laptop can hold many
