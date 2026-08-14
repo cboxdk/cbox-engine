@@ -6,6 +6,7 @@ namespace Cbox\Engine\Console;
 
 use Cbox\Engine\Contracts\Kubernetes;
 use Cbox\Engine\Platform\SharedGateway;
+use Cbox\Engine\Project\EnvironmentRegistry;
 use Cbox\Engine\Project\ProjectLocator;
 use Cbox\Engine\Project\ResourceSpec;
 use Illuminate\Console\Command;
@@ -25,6 +26,17 @@ use Illuminate\Console\Command;
  *
  * `--force` exists for scripts and agents, which cannot answer a prompt, and it
  * has to be typed.
+ *
+ * AND `--project`, FOR THE ONE THIS COULD NOT REACH. Everything above starts by
+ * reading a `cbox.yaml`, so a project whose directory has been deleted — the
+ * ordinary end of a project, `rm -rf` on a checkout somebody finished with — had
+ * no way off the cluster at all. `cbox prune` does not offer it either: it
+ * deliberately never proposes a DEFAULT environment, because a project that was
+ * moved has not been abandoned. Between the two, the namespace, its Postgres and
+ * its volume stayed forever, which is the exact outcome prune exists to prevent.
+ *
+ * Named against the cluster rather than a file, because the cluster is what
+ * still has it.
  */
 class RemoveCommand extends Command
 {
@@ -33,28 +45,37 @@ class RemoveCommand extends Command
     protected $signature = 'local:remove
                             {--path= : The directory to look in, defaulting to this one}
                             {--env= : Which environment, defaulting to the worktree you are in}
+                            {--project= : Remove it by the name the cluster knows, for a project whose directory is gone}
                             {--force : Do not ask}
                             {--json : Machine-readable output}';
 
     protected $description = 'Remove the project in this directory from the cluster, with its data';
 
-    public function handle(ProjectLocator $locator, Kubernetes $kubernetes, SharedGateway $gateway): int
-    {
-        $manifest = $this->locateProject($locator);
+    public function handle(
+        ProjectLocator $locator,
+        Kubernetes $kubernetes,
+        SharedGateway $gateway,
+        EnvironmentRegistry $environments,
+    ): int {
+        $named = $this->stringOption('project');
 
-        if ($manifest === null) {
+        $target = $named !== null
+            ? $this->fromCluster($named, $environments)
+            : $this->fromManifest($locator);
+
+        if ($target === null) {
             return self::FAILURE;
         }
 
-        $namespace = $manifest->namespace();
+        [$deployedName, $environmentName, $namespace, $label, $resources] = $target;
 
         if ($kubernetes->read('namespace', $namespace, '') === null) {
-            $this->line('  ['.$this->label($manifest).'] is not on the cluster.');
+            $this->line("  [{$label}] is not on the cluster.");
 
             return self::SUCCESS;
         }
 
-        if (! $this->option('force') && ! $this->confirmRemoval($this->label($manifest), $manifest->resources)) {
+        if (! $this->option('force') && ! $this->confirmRemoval($label, $resources)) {
             $this->line('  Left alone.');
 
             return self::FAILURE;
@@ -69,12 +90,12 @@ class RemoveCommand extends Command
         // it back in step before reporting success — a removal that leaves the
         // gateway naming a secret nobody creates takes every OTHER project on
         // this machine off the air.
-        $gatewayUpdated = $removed && $gateway->forget($manifest->deployedName());
+        $gatewayUpdated = $removed && $gateway->forget($deployedName);
 
         if ($this->option('json')) {
             $this->line((string) json_encode([
-                'name' => $manifest->deployedName(),
-                'environment' => $manifest->environment->name,
+                'name' => $deployedName,
+                'environment' => $environmentName,
                 'namespace' => $namespace,
                 'removed' => $removed,
                 'gateway_updated' => $gatewayUpdated,
@@ -84,20 +105,86 @@ class RemoveCommand extends Command
         }
 
         if (! $removed) {
-            $this->error('  ['.$this->label($manifest).'] could not be removed.');
+            $this->error("  [{$label}] could not be removed.");
 
             return self::FAILURE;
         }
 
         if (! $gatewayUpdated) {
-            $this->error('  ['.$this->label($manifest).'] is gone, but the gateway still names its certificate. Deploy anything to put it back in step.');
+            $this->error("  [{$label}] is gone, but the gateway still names its certificate. Deploy anything to put it back in step.");
 
             return self::FAILURE;
         }
 
-        $this->line('  <fg=green>✓</> ['.$this->label($manifest).'] removed.');
+        $this->line("  <fg=green>✓</> [{$label}] removed.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * The project in a directory, which is how this is nearly always used.
+     *
+     * @return array{string, string, string, string, list<ResourceSpec>}|null
+     */
+    private function fromManifest(ProjectLocator $locator): ?array
+    {
+        $manifest = $this->locateProject($locator);
+
+        return $manifest === null ? null : [
+            $manifest->deployedName(),
+            $manifest->environment->name,
+            $manifest->namespace(),
+            $this->label($manifest),
+            $manifest->resources,
+        ];
+    }
+
+    /**
+     * An environment named against the cluster, for when there is no file left.
+     *
+     * NO RESOURCE LIST, and that is not a gap to fill later. The names come from
+     * a manifest this project no longer has, so the confirmation says plainly
+     * that everything in the namespace goes rather than listing two databases
+     * and quietly omitting a third the file used to mention.
+     *
+     * @return array{string, string, string, string, list<ResourceSpec>}|null
+     */
+    private function fromCluster(string $named, EnvironmentRegistry $environments): ?array
+    {
+        foreach ($environments->all() as $environment) {
+            if ($environment->name() === $named) {
+                return [
+                    $environment->name(),
+                    $environment->environment,
+                    $environment->namespace,
+                    $environment->name(),
+                    [],
+                ];
+            }
+        }
+
+        // NAMED BACK, with what there was to choose from. A typo and a project
+        // that was never deployed produce the same silence otherwise, and the
+        // names are not guessable — an environment is `project-environment`.
+        $this->error("  [{$named}] is not an environment on this cluster.");
+
+        $known = array_map(
+            static fn ($environment): string => $environment->name(),
+            $environments->all(),
+        );
+
+        if ($known !== []) {
+            $this->line('      There is: '.implode(', ', $known));
+        }
+
+        return null;
+    }
+
+    private function stringOption(string $key): ?string
+    {
+        $value = $this->option($key);
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**
