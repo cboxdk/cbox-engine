@@ -9,6 +9,7 @@ use Cbox\Engine\Project\ImageBuilder;
 use Cbox\Engine\Project\ProjectManifestReader;
 use Cbox\Engine\Project\SidecarCompiler;
 use Cbox\Engine\Project\SidecarService;
+use Cbox\Engine\Sandbox\SandboxBuilder;
 use Cbox\Engine\Testing\FakeCommandRunner;
 use Cbox\Engine\Tests\RecordingKubernetes;
 use Cbox\Engine\ValueObjects\CommandResult;
@@ -298,4 +299,26 @@ it('gives the manifest reader its token resolver when the container builds one',
     $github->setAccessible(true);
 
     expect($github->getValue($reader))->toBeInstanceOf(GithubToken::class);
+});
+
+it('makes the sandbox directory ignore itself', function (): void {
+    // A WHOLE LARAVEL APPLICATION GOES INTO SOMEBODY'S REPOSITORY. It is
+    // disposable and the command says so — and it still turned up as untracked
+    // in `git status`, a few thousand files a `git add -A` would commit. Found
+    // on this package's own checkout by running the command.
+    $package = sys_get_temp_dir().'/cbox-sandbox-ignore-'.getmypid();
+    @mkdir($package.'/.cbox/sandbox/php84-laravel13', 0755, true);
+
+    $builder = new SandboxBuilder(new FakeCommandRunner);
+
+    $ignore = new ReflectionMethod($builder, 'ignoreItself');
+    $ignore->invoke($builder, $package);
+
+    expect(file_get_contents($package.'/.cbox/.gitignore'))->toContain('*');
+
+    // Never overwritten: a developer who edited it meant to.
+    file_put_contents($package.'/.cbox/.gitignore', 'mine');
+    $ignore->invoke($builder, $package);
+
+    expect(file_get_contents($package.'/.cbox/.gitignore'))->toBe('mine');
 });

@@ -49,6 +49,8 @@ class SandboxBuilder
             throw new RuntimeException("Could not create [{$directory}] for the sandbox.");
         }
 
+        $this->ignoreItself(rtrim($package, '/'));
+
         // A REAL SKELETON, not a hand-written index.php. A package meets
         // middleware, the service container, config discovery and another
         // twenty packages in a real application, and a sandbox that skips all
@@ -175,5 +177,35 @@ class SandboxBuilder
         $clean = strtolower((string) preg_replace('~[^a-z0-9]+~i', '-', $name));
 
         return trim($clean, '-').'-sandbox';
+    }
+
+    /**
+     * Make `.cbox` ignore itself, rather than editing the package's rules.
+     *
+     * THIS WRITES A WHOLE LARAVEL APPLICATION INTO SOMEBODY'S REPOSITORY. It is
+     * disposable and the command says so — and it still turned up as untracked
+     * in `git status`, a few thousand files that a `git add -A` would commit.
+     * Measured on this package's own checkout, which is how it was found.
+     *
+     * A `.gitignore` INSIDE the directory, holding `*`, so the rule arrives with
+     * the thing it describes and leaves with it. Appending to the package's own
+     * `.gitignore` would edit a file the developer owns, for a directory they did
+     * not ask to keep — and it would stay there after the sandbox was deleted.
+     *
+     * Written once and never overwritten: a developer who edited it meant to.
+     */
+    private function ignoreItself(string $package): void
+    {
+        $root = $package.'/.cbox';
+        $file = $root.'/.gitignore';
+
+        if (! is_dir($root) || is_file($file)) {
+            return;
+        }
+
+        // Best effort. A sandbox that works and shows up in `git status` is a
+        // far better outcome than one that refuses to build over a file it
+        // could not write.
+        @file_put_contents($file, "# Written by `cbox sandbox`. Nothing in here is your work.\n*\n");
     }
 }
