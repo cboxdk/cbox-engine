@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Cbox\Engine\Kind\HostPorts;
 use Cbox\Engine\Platform\LocalTarget;
 use Cbox\Engine\Project\CommandLine;
 use Cbox\Engine\Project\ProjectDeployer;
@@ -245,4 +246,86 @@ it('takes the leftover away before it applies, not after', function (): void {
     expect($deleted)->toBeInt()
         ->and($applied)->toBeInt()
         ->and($deleted)->toBeLessThan($applied);
+});
+
+it('takes the tunnel address as one of its own names', function (): void {
+    // MEASURED: APP_URL is baked into the Deployment at deploy time, and
+    // `cbox expose` never touched the workload — so an exposed project kept
+    // telling the world it lived at `.cbox.test`, which is a name the person on
+    // the other end of the tunnel cannot resolve.
+    $manifest = (new ProjectManifestReader)->read(
+        writeManifest("name: acme\nimage: acme/web:1\nurl: APP_URL\n").'/cbox.yaml'
+    );
+
+    $exposed = $manifest->alsoReachableAt('https://calm-fox-1234.trycloudflare.com');
+
+    expect($exposed->domains)->toContain('calm-fox-1234.trycloudflare.com')
+        // ...and keeps its own, because the local address still works and is
+        // what somebody at this machine uses.
+        ->and($exposed->domains)->toContain('acme.cbox.test');
+});
+
+it('is unchanged when this machine does not know the address', function (): void {
+    // A token tunnel's hostname lives in Cloudflare, and "exposed, address
+    // configured elsewhere" is not an address to compile in.
+    $manifest = (new ProjectManifestReader)->read(
+        writeManifest("name: acme\nimage: acme/web:1\n").'/cbox.yaml'
+    );
+
+    expect($manifest->alsoReachableAt('')->domains)->toBe($manifest->domains)
+        ->and($manifest->alsoReachableAt('acme.cbox.test')->domains)->toBe($manifest->domains);
+});
+
+it('tells an exposed application its public address, not its local one', function (): void {
+    // The whole point: `url:` names the variable the application reads, and it
+    // is resolved from the FIRST addressable domain — so the tunnel's name has
+    // to be in place before the URL is worked out, not after.
+    $manifest = (new ProjectManifestReader)->read(
+        writeManifest("name: acme\nimage: acme/web:1\nurl: APP_URL\ndomains:\n  - tunnel.example.com\n").'/cbox.yaml'
+    );
+
+    $resolved = $manifest->withResolvedUrl(HostPorts::high());
+
+    expect($resolved->env['APP_URL'])->toContain('tunnel.example.com');
+});
+
+it('deploys an exposed project with its public name on the route', function (): void {
+    // THE WIRING, which mutation testing caught as untested: taking the tunnel
+    // lookup out of the deploy broke nothing. An exposed project has to compile
+    // WITH its public hostname, or the next ordinary deploy quietly takes it
+    // off the route again — server-side apply writes the compiled set, and
+    // anything outside it is not in the books.
+    $kubernetes = new RecordingKubernetes;
+
+    // A tunnel Deployment in the project's namespace is how the cluster says
+    // "this project is exposed".
+    $kubernetes->listedBySelector['app.kubernetes.io/name=cbox-tunnel'] = [
+        ManifestDocument::fromArray([
+            'apiVersion' => 'apps/v1',
+            'kind' => 'Deployment',
+            'metadata' => [
+                'name' => 'cbox-tunnel',
+                'namespace' => 'cbox-acme',
+                'labels' => ['platform.cbox.dk/service' => 'acme'],
+            ],
+        ]),
+    ];
+
+    $kubernetes->logLine = "INF Your quick Tunnel has been created! Visit it at:\n"
+        ."https://calm-fox-1234.trycloudflare.com\n";
+
+    new ProjectDeployer($kubernetes, new LocalTarget)->deploy(
+        (new ProjectManifestReader)->read(writeManifest("name: acme\nimage: acme/web:1\n").'/cbox.yaml')
+    );
+
+    $hostnames = [];
+
+    foreach ($kubernetes->applied as $document) {
+        if ($document->kind() === 'HTTPRoute') {
+            $hostnames = [...$hostnames, ...$document->stringsAt('spec', 'hostnames')];
+        }
+    }
+
+    expect($hostnames)->toContain('calm-fox-1234.trycloudflare.com')
+        ->and($hostnames)->toContain('acme.cbox.test');
 });

@@ -303,6 +303,57 @@ readonly class ProjectManifest
         );
     }
 
+    /**
+     * The public address a tunnel gave this project, as one of its own names.
+     *
+     * SO THE APPLICATION LEARNS ITS OWN NAME. A tunnel rewrites `Host` to the
+     * local hostname on the way in, because the gateway has no route for the
+     * public one — and the application then generates every link, redirect and
+     * signed URL against `.cbox.test`, a name the person on the other end of
+     * the tunnel cannot resolve. Measured: `APP_URL` is baked into the
+     * Deployment at deploy time and `cbox expose` never touched the workload.
+     *
+     * COMPILED IN RATHER THAN PATCHED ON. A hostname added to the live route by
+     * hand is one the next deploy takes away: server-side apply writes the
+     * compiled set and anything outside it is not in the books. In the manifest,
+     * the route and the address the application is told agree — and keep
+     * agreeing.
+     *
+     * @param  string  $address  the tunnel's public address, or empty when this
+     *                           machine does not know it: a token tunnel's
+     *                           hostname lives in Cloudflare, not here
+     */
+    public function alsoReachableAt(string $address): self
+    {
+        $host = trim((string) (parse_url($address, PHP_URL_HOST) ?: $address));
+
+        if ($host === '' || in_array($host, $this->domains, true)) {
+            return $this;
+        }
+
+        return new self(
+            name: $this->name,
+            image: $this->image,
+            port: $this->port,
+            domains: [...$this->domains, $host],
+            env: $this->env,
+            processes: $this->processes,
+            replicas: $this->replicas,
+            resources: $this->resources,
+            scaleToZero: $this->scaleToZero,
+            idleSeconds: $this->idleSeconds,
+            suspended: $this->suspended,
+            environment: $this->environment,
+            path: $this->path,
+            urlVariable: $this->urlVariable,
+            fromSource: $this->fromSource,
+            build: $this->build,
+            services: $this->services,
+            mountPath: $this->mountPath,
+            mounts: $this->mounts,
+        );
+    }
+
     public function runningImage(string $image): self
     {
         return new self(

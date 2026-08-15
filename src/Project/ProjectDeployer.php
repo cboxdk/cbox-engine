@@ -10,6 +10,7 @@ use Cbox\Engine\Kind\HostPorts;
 use Cbox\Engine\Platform\ClusterObjects;
 use Cbox\Engine\Platform\LocalTarget;
 use Cbox\Engine\Platform\ProjectListeners;
+use Cbox\Engine\Tunnel\TunnelRegistry;
 use Cbox\Engine\ValueObjects\ApplyOutcome;
 use Cbox\Engine\ValueObjects\ManifestDocument;
 use Cbox\Engine\ValueObjects\Sweep;
@@ -73,6 +74,12 @@ class ProjectDeployer
                 failure: '',
             );
         }
+
+        // A TUNNEL'S PUBLIC NAME IS ONE OF THIS PROJECT'S NAMES, and it has to
+        // be known before the URL is resolved — the application is told its
+        // address once, at compile time, and a tunnel opened afterwards cannot
+        // change what it was told. See {@see ProjectManifest::alsoReachableAt()}.
+        $manifest = $manifest->alsoReachableAt($this->tunnels()[$manifest->deployedName()] ?? '');
 
         // The project's own address, before anything is compiled: an
         // environment moved its hostname and nothing else would tell it.
@@ -237,6 +244,20 @@ class ProjectDeployer
             ->sweep($manifest->namespace(), $documents, commit: ! $dryRun);
 
         return $this->kubernetes->apply($documents, $dryRun)->including($swept);
+    }
+
+    /**
+     * The public address of every project a tunnel is currently serving.
+     *
+     * ASKED OF THE CLUSTER, like everything else here. A tunnel is a Deployment
+     * in the project's own namespace, so the cluster knows which projects are
+     * exposed and this tool does not have to remember.
+     *
+     * @return array<string, string>
+     */
+    private function tunnels(): array
+    {
+        return new TunnelRegistry($this->kubernetes)->running();
     }
 
     /**
