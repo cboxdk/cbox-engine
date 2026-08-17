@@ -7,11 +7,18 @@ on:
 
 jobs:
   qa:
-    # SELF-HOSTED, because hosted runners are blocked for the organisation. This
-    # repository is public now, which may well lift that — but a runner change is
-    # only knowable by trying it, and a job that cannot start reports exactly like
-    # a job that ran and failed. Left on the runner that demonstrably works.
-    runs-on: [self-hosted, linux, x64, cbox]
+    # GITHUB-HOSTED, AND THAT IS A SECURITY DECISION RATHER THAN A PREFERENCE.
+    # This workflow runs on `pull_request`, and this repository is public — so a
+    # self-hosted runner here executes a stranger's branch on our own hardware
+    # the moment anybody opens a fork PR. It sat that way from when the
+    # repository was private and hosted runners were blocked for the
+    # organisation; going public lifted the block and created the hole in the
+    # same move, and nobody revisited the line.
+    #
+    # Hosted runners are free and unlimited for public repositories, so there is
+    # nothing to weigh. The private repositories that still need our own fleet
+    # are private, which is exactly why fork PRs are not a concern there.
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
