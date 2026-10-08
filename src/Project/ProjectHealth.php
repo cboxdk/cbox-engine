@@ -128,10 +128,23 @@ class ProjectHealth
         return true;
     }
 
-    /** The first pod in this namespace that is stuck for a reason worth saying. */
-    private function blockedIn(string $namespace): ?string
+    /**
+     * The first pod matching a selector that is stuck for a reason worth saying.
+     *
+     * Public for the release: a Job whose pod cannot start — a Secret that does
+     * not exist, an image that cannot be pulled — never finishes on its own,
+     * and waiting out its deadline is an hour of silence for an answer that is
+     * already here.
+     */
+    public function blockedPod(string $namespace, string $selector): ?string
     {
-        foreach ($this->kubernetes->list('pod', 'platform.cbox.dk/managed=true', $namespace) as $pod) {
+        return $this->blockedIn($namespace, $selector);
+    }
+
+    /** The first pod in this namespace that is stuck for a reason worth saying. */
+    private function blockedIn(string $namespace, string $selector = 'platform.cbox.dk/managed=true'): ?string
+    {
+        foreach ($this->kubernetes->list('pod', $selector, $namespace) as $pod) {
             // A pod that has been asked to go is not evidence of anything.
             if ($pod->stringAt('metadata', 'deletionTimestamp') !== '') {
                 continue;
@@ -197,8 +210,9 @@ class ProjectHealth
         return match ($reason) {
             'ImagePullBackOff', 'ErrImagePull' => 'The image could not be pulled: '
                 .($message !== '' ? $message : 'check the name, the tag, and whether it needs credentials.'),
-            'CreateContainerConfigError' => 'The container could not be configured, usually a binding '
-                .'pointing at a Secret nothing creates: '.$message,
+            'CreateContainerConfigError' => 'The container could not be configured, usually a `secrets` '
+                .'entry or a binding pointing at a Secret or key that does not exist — create it on the '
+                .'cluster and deploy again: '.$message,
             'CrashLoopBackOff' => 'The container starts and exits. `cbox logs` has what it said.',
             'InvalidImageName' => 'That is not a valid image name: '.$message,
             default => null,

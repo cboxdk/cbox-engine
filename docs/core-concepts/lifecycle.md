@@ -9,6 +9,13 @@ description: Apply and sweep, why the sweep runs first, and the four states a pr
 A deploy compiles the manifest, **takes away what the manifest stopped asking
 for**, and applies the rest.
 
+## A release runs first
+
+With a `release:` command, the apply is split in two around it: everything but
+the Deployments (and the scalers that act on them), then the release as a Job,
+waited on to completion, then the full set. A failed release stops the deploy
+with its output and rolls nothing — see [the manifest](the-manifest.md#release).
+
 ## Server-side apply never removes
 
 An apply updates; it does not subtract. Anything applied by a previous deploy and

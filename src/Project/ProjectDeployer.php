@@ -17,6 +17,7 @@ use Cbox\Engine\ValueObjects\Sweep;
 use Cbox\Platform\Compile\BackupCompiler;
 use Cbox\Platform\Compile\CnpgDatabaseCompiler;
 use Cbox\Platform\Compile\EngineDatabaseCompiler;
+use Cbox\Platform\Compile\ReleaseJobCompiler;
 use Cbox\Platform\Compile\ServiceCompiler;
 use Cbox\Platform\Compile\StatefulDatabaseCompiler;
 use Cbox\Platform\Manifest\Manifest;
@@ -50,7 +51,17 @@ class ProjectDeployer
             HostPorts::HIGH_DNS,
         ),
         private readonly ?ImageDigest $digests = null,
+        private readonly ?ReleaseRunner $releases = null,
     ) {}
+
+    /**
+     * Kinds held back until the release has run.
+     *
+     * The workloads, and the scalers that act on them. Everything else — the
+     * namespace, Secrets, Services, routes, databases, sidecars — is what the
+     * release needs in place, or is harmless to have early.
+     */
+    private const HELD_FOR_RELEASE = ['Deployment', 'ScaledObject', 'HTTPScaledObject'];
 
     public function deploy(
         ProjectManifest $manifest,
@@ -152,19 +163,32 @@ class ProjectDeployer
 
         $sources = [];
         $manifests = [];
+        $databaseObjects = [];
 
         $passwords = $this->passwords?->forResources($manifest->resources, $manifest->namespace()) ?? [];
 
         foreach ($manifest->toDatabaseSpecs($passwords) as $database) {
-            $manifests = [...$manifests, ...$databases->compile($database)->manifests];
+            $compiledDatabase = $databases->compile($database)->manifests;
+            $manifests = [...$manifests, ...$compiledDatabase];
+            $databaseObjects = [...$databaseObjects, ...$compiledDatabase];
         }
 
         foreach ($manifest->resources as $resource) {
             $sources[$resource->name] = $this->connections->forResource($resource, $manifest->namespace());
         }
 
-        $compiled = new ServiceCompiler($target)->compile($manifest->toServiceSpec($sources));
+        $spec = $manifest->toServiceSpec($sources);
+        $services = new ServiceCompiler($target);
+        $compiled = $services->compile($spec);
         $manifests = [...$manifests, ...$compiled->manifests];
+
+        // THE RELEASE, compiled from the same spec so it sees exactly what the
+        // new pods will — and kept OUT of the set, because a set is applied at
+        // once and this has to finish first.
+        $release = array_map(
+            static fn ($m): ManifestDocument => ManifestDocument::fromArray($m->body),
+            new ReleaseJobCompiler($services, $target)->compile($spec)->manifests,
+        );
 
         $documents = array_map(
             static fn ($m): ManifestDocument => ManifestDocument::fromArray($m->body),
@@ -243,7 +267,76 @@ class ProjectDeployer
         $swept = new OrphanedObjects($this->kubernetes)
             ->sweep($manifest->namespace(), $documents, commit: ! $dryRun);
 
-        return $this->kubernetes->apply($documents, $dryRun)->including($swept);
+        // A DRY RUN VALIDATES THE RELEASE WITH EVERYTHING ELSE and runs nothing:
+        // the API server checks the Job like any other object, and nothing
+        // executes.
+        if ($dryRun || $release === []) {
+            return $this->kubernetes->apply([...$documents, ...($dryRun ? $release : [])], $dryRun)->including($swept);
+        }
+
+        return $this->releaseThenRoll($manifest, $documents, $compiled->manifests, $release[0], $databaseObjects)
+            ->including($swept);
+    }
+
+    /**
+     * Apply what the release needs, run it, and only then roll the workloads.
+     *
+     * THE ORDER IS THE FEATURE. A migration has to run against the NEW code —
+     * the old pods carry the old migrations — and finish before the new pods
+     * serve, because they expect the schema it makes. So the workloads are
+     * held back until the release has said yes; until then the previous release
+     * keeps serving, untouched.
+     *
+     * A FAILED RELEASE ROLLS NOTHING. The deploy stops with the release's own
+     * output, the old Deployments still running the old code against a schema
+     * the failed migration did not finish changing — which is why migrations
+     * have to be safe for the release before them.
+     *
+     * @param  list<ManifestDocument>  $documents
+     * @param  list<Manifest>  $service
+     * @param  list<Manifest>  $databases
+     */
+    private function releaseThenRoll(
+        ProjectManifest $manifest,
+        array $documents,
+        array $service,
+        ManifestDocument $release,
+        array $databases,
+    ): ApplyOutcome {
+        $held = [];
+
+        foreach ($service as $compiled) {
+            if (in_array($compiled->kind, self::HELD_FOR_RELEASE, true)) {
+                $held[$compiled->kind.'/'.$compiled->name] = true;
+            }
+        }
+
+        $first = $this->kubernetes->apply(array_values(array_filter(
+            $documents,
+            static fn (ManifestDocument $document): bool => ! isset($held[$document->kind().'/'.$document->name()]),
+        )));
+
+        if (! $first->succeeded) {
+            return $first;
+        }
+
+        $failure = ($this->releases ?? new ReleaseRunner($this->kubernetes, new ProjectHealth($this->kubernetes)))->run(
+            $release,
+            $manifest->namespace(),
+            array_map(static fn ($m): ManifestDocument => ManifestDocument::fromArray($m->body), $databases),
+            $manifest->release,
+        );
+
+        if ($failure !== null) {
+            return new ApplyOutcome(
+                succeeded: false,
+                applied: $first->applied,
+                output: $first->output,
+                failure: $failure,
+            );
+        }
+
+        return $this->kubernetes->apply($documents);
     }
 
     /**

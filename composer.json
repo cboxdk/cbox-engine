@@ -1,6 +1,6 @@
 {
     "name": "cboxdk/cbox-engine",
-    "description": "The engine behind the cbox CLI and the Cbox Local desktop app \u2014 one local Kubernetes cluster running an application the way production does.",
+    "description": "The engine behind the cbox CLI and the Cbox Local desktop app — one local Kubernetes cluster running an application the way production does.",
     "type": "library",
     "keywords": [
         "kubernetes",
@@ -31,7 +31,7 @@
     },
     "require": {
         "php": "^8.4",
-        "cboxdk/platform": "^0.11.0",
+        "cboxdk/platform": "dev-feat/secrets-health-release as 0.12.0",
         "illuminate/console": "^12.0 || ^13.0",
         "illuminate/contracts": "^12.0 || ^13.0",
         "illuminate/http": "^12.0 || ^13.0",
@@ -45,6 +45,12 @@
         "orchestra/testbench": "^10.0 || ^11.0",
         "pestphp/pest": "^3.5 || ^4.0"
     },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/cboxdk/platform"
+        }
+    ],
     "autoload": {
         "psr-4": {
             "Cbox\\Engine\\": "src/"

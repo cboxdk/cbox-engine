@@ -31,6 +31,9 @@ use Cbox\Engine\Project\ProjectManifest;
  *   policy and a bill attached. The manifest says the application needs
  *   Postgres; it does not get to provision one by being pushed.
  * - **`suspended`.** Whether something is asleep on a laptop this afternoon.
+ * - **`secrets`, `health`, `release`.** Cortex's `/v1` service surface has no
+ *   field for any of them yet. Each is named in {@see self::omitted()} with
+ *   what to do in Cortex instead, so a push never looks like it carried them.
  */
 readonly class PushPayload
 {
@@ -111,6 +114,24 @@ readonly class PushPayload
             $omitted[] = count($this->manifest->resources).' resource'
                 .(count($this->manifest->resources) === 1 ? '' : 's')
                 .' — a production database is provisioned deliberately, not by being pushed';
+        }
+
+        if ($this->manifest->secrets !== []) {
+            // References, not values — but to Secrets on THIS cluster. Cortex
+            // keeps a service's secrets itself, and a name that means a Secret
+            // here means nothing there.
+            $omitted[] = count($this->manifest->secrets).' secret reference'
+                .(count($this->manifest->secrets) === 1 ? '' : 's')
+                .' — set them as secrets on the Cortex service';
+        }
+
+        if ($this->manifest->health !== null) {
+            $omitted[] = 'health — not pushed yet; set the probes in Cortex';
+        }
+
+        if ($this->manifest->release !== []) {
+            $omitted[] = 'release — not pushed yet; run `'.implode(' ', $this->manifest->release)
+                .'` as a one-off run in Cortex BEFORE applying the plan';
         }
 
         if ($this->manifest->processes !== []) {

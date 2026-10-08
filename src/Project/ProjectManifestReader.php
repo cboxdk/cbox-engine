@@ -6,6 +6,8 @@ namespace Cbox\Engine\Project;
 
 use Cbox\Platform\Binding\ConnectionField;
 use Cbox\Platform\Database\DatabaseEngine;
+use Cbox\Platform\Service\HealthCheck;
+use Cbox\Platform\Service\SecretReference;
 use Cbox\Platform\Service\SourceMount;
 use RuntimeException;
 use Symfony\Component\Yaml\Exception\ParseException;
@@ -40,8 +42,9 @@ class ProjectManifestReader
      * @var list<string>
      */
     private const KEYS = [
-        'build', 'domains', 'env', 'idle_seconds', 'image', 'mount', 'name', 'port',
-        'mounts', 'processes', 'replicas', 'resources', 'scale_to_zero', 'services', 'source', 'url',
+        'build', 'domains', 'env', 'health', 'idle_seconds', 'image', 'mount', 'name', 'port',
+        'mounts', 'processes', 'release', 'replicas', 'resources', 'scale_to_zero', 'secrets', 'services',
+        'source', 'url',
     ];
 
     public function find(string $from): ?string
@@ -103,24 +106,266 @@ class ProjectManifestReader
             );
         }
 
+        $env = $this->env($parsed);
+        $resources = $this->resources($parsed);
+        $urlVariable = $this->urlVariable($parsed);
+        $secrets = $this->secrets($parsed, $env, $resources, $urlVariable);
+
         return new ProjectManifest(
             name: $name,
             image: $this->image($parsed, $name),
             port: $this->port($parsed),
             domains: $domains,
-            env: $this->env($parsed),
+            env: $env,
             processes: $this->processes($parsed),
             replicas: $this->replicas($parsed),
-            resources: $this->resources($parsed),
+            resources: $resources,
             scaleToZero: $this->scaleToZero($parsed),
             idleSeconds: $this->idleSeconds($parsed, $name),
-            urlVariable: $this->urlVariable($parsed),
+            urlVariable: $urlVariable,
             fromSource: $this->fromSource($parsed, $name),
             mountPath: $this->mountPath($parsed),
             mounts: $this->mounts($parsed, dirname($path)),
             build: BuildSpec::fromManifest($parsed['build'] ?? null, dirname($path), $this->github),
             services: SidecarService::listFrom($parsed['services'] ?? null),
+            secrets: $secrets,
+            health: $this->health($parsed, $secrets, $env),
+            release: $this->release($parsed),
         );
+    }
+
+    /**
+     * Environment variables from Secrets that already exist on the platform.
+     *
+     *     secrets:
+     *       APP_KEY: { secret: cbox-id-app, key: APP_KEY }
+     *
+     * A NAME, NEVER A VALUE. This file is committed; what it can say about a
+     * credential is where it lives. The Secret is the operator's, created
+     * before the first deploy — nothing here creates, changes or removes it,
+     * and a missing one stops the pod at start (`CreateContainerConfigError`)
+     * rather than letting it boot without the value.
+     *
+     * ONE VARIABLE, ONE SOURCE. A name under both `env` and `secrets`, or one a
+     * resource binds, reaches the container twice and Kubernetes keeps the last
+     * — one of the two silently ignored, and which one depends on an order this
+     * file does not show.
+     *
+     * @param  array<mixed>  $parsed
+     * @param  array<string, string>  $env
+     * @param  list<ResourceSpec>  $resources
+     * @return list<SecretReference>
+     */
+    private function secrets(array $parsed, array $env, array $resources, string $urlVariable): array
+    {
+        $secrets = $parsed['secrets'] ?? [];
+
+        if (! is_array($secrets)) {
+            throw new RuntimeException(
+                '`secrets` maps an environment variable to the Secret that holds it, like '
+                .'`APP_KEY: { secret: myapp, key: APP_KEY }`.'
+            );
+        }
+
+        $bound = [];
+
+        foreach ($resources as $resource) {
+            foreach ($resource->map as $variable) {
+                $bound[$variable] = $resource->name;
+            }
+        }
+
+        $references = [];
+
+        foreach ($secrets as $variable => $source) {
+            if (! is_string($variable) || ! SecretReference::isVariableName($variable)) {
+                throw new RuntimeException(
+                    '['.$variable.'] under `secrets` is not an environment variable name. Use letters, '
+                    .'digits and underscores, not starting with a digit.'
+                );
+            }
+
+            if (! is_array($source)) {
+                throw new RuntimeException(
+                    "[{$variable}] under `secrets` names where its value lives: "
+                    ."`{$variable}: { secret: <Secret name>, key: <key in it> }`. Never the value itself — "
+                    .'this file is committed.'
+                );
+            }
+
+            $this->guardKeys($source, ['key', 'secret'], "[{$variable}] under `secrets`");
+
+            $secret = $source['secret'] ?? null;
+            $key = $source['key'] ?? null;
+
+            if (! is_string($secret) || ! SecretReference::isSecretName($secret)) {
+                throw new RuntimeException(
+                    "[{$variable}] under `secrets` needs the `secret` it lives in: a Secret name of "
+                    .'lower-case letters, digits, hyphens and dots, as it exists on the platform.'
+                );
+            }
+
+            if (! is_string($key) || ! SecretReference::isKey($key)) {
+                throw new RuntimeException(
+                    "[{$variable}] under `secrets` needs the `key` inside [{$secret}] that holds it: "
+                    .'letters, digits, \'-\', \'_\' and \'.\'.'
+                );
+            }
+
+            if (array_key_exists($variable, $env)) {
+                throw new RuntimeException(
+                    "[{$variable}] is under both `env` and `secrets`. A container keeps one of the two "
+                    .'and silently drops the other — remove the one you did not mean.'
+                );
+            }
+
+            if (isset($bound[$variable])) {
+                throw new RuntimeException(
+                    "[{$variable}] is under `secrets` and is also bound by the resource [{$bound[$variable]}]. "
+                    .'The binding already supplies it from the platform\'s own Secret — remove one.'
+                );
+            }
+
+            if ($variable === $urlVariable) {
+                throw new RuntimeException(
+                    "[{$variable}] is the variable `url` fills in with this project's address, so it "
+                    .'cannot also come from a Secret.'
+                );
+            }
+
+            $references[] = new SecretReference($variable, $secret, $key);
+        }
+
+        return $references;
+    }
+
+    /**
+     * The web process's probes.
+     *
+     *     health:
+     *       path: /health/ready      # readiness — decides traffic
+     *       liveness: /up            # liveness — decides restarts
+     *       token: HEALTH_TOKEN      # optional: sent to `path` as a bearer token
+     *
+     * THE TOKEN IS A NAME, and it has to be one of `secrets`. A probe header
+     * cannot come from a Secret in Kubernetes, so the platform has the container
+     * ask itself with the variable it already holds — which only works if the
+     * variable is there, and a token written under `env` is a credential
+     * committed to the repository.
+     *
+     * @param  array<mixed>  $parsed
+     * @param  list<SecretReference>  $secrets
+     * @param  array<string, string>  $env
+     */
+    private function health(array $parsed, array $secrets, array $env): ?HealthCheck
+    {
+        $health = $parsed['health'] ?? null;
+
+        if ($health === null) {
+            return null;
+        }
+
+        if (! is_array($health)) {
+            throw new RuntimeException(
+                '`health` says where the platform asks whether a pod can serve (`path`) and whether it '
+                .'is alive (`liveness`), like `path: /health/ready` and `liveness: /up`.'
+            );
+        }
+
+        $this->guardKeys($health, ['liveness', 'path', 'token'], '`health`');
+
+        $path = $health['path'] ?? '';
+        $liveness = $health['liveness'] ?? '';
+        $token = $health['token'] ?? '';
+
+        foreach (['path' => $path, 'liveness' => $liveness] as $field => $value) {
+            if (! is_string($value) || ($value !== '' && ! HealthCheck::isPath($value))) {
+                throw new RuntimeException(
+                    "`health.{$field}` is an absolute path such as /health/ready — letters, digits and "
+                    .'. _ ~ % / + : @ = & ? , - only, with no spaces or quotes.'
+                );
+            }
+        }
+
+        if (! is_string($path) || ! is_string($liveness)) {
+            throw new RuntimeException('`health` takes paths.');
+        }
+
+        if ($path === '' && $liveness === '') {
+            throw new RuntimeException('`health` needs a readiness `path`, a `liveness` path, or both.');
+        }
+
+        if (! is_string($token) || ($token !== '' && ! SecretReference::isVariableName($token))) {
+            throw new RuntimeException(
+                '`health.token` names the environment variable that holds the token, such as HEALTH_TOKEN — '
+                .'never the token itself.'
+            );
+        }
+
+        if ($token !== '' && $path === '') {
+            throw new RuntimeException(
+                '`health.token` is sent to the readiness `path`, and there is none. Liveness never takes '
+                .'a token: it has to answer even when the application cannot.'
+            );
+        }
+
+        if ($token !== '' && array_key_exists($token, $env)) {
+            throw new RuntimeException(
+                "`health.token` is [{$token}], which is under `env` — a credential written into a committed "
+                .'file. Move it under `secrets`, as a reference to the Secret that holds it.'
+            );
+        }
+
+        $declared = array_map(static fn (SecretReference $reference): string => $reference->variable, $secrets);
+
+        if ($token !== '' && ! in_array($token, $declared, true)) {
+            throw new RuntimeException(
+                "`health.token` is [{$token}], and nothing under `secrets` sets it. Without it the probe "
+                .'sends an empty token, is refused, and the pod never becomes ready.'
+            );
+        }
+
+        return new HealthCheck(readinessPath: $path, livenessPath: $liveness, tokenVariable: $token);
+    }
+
+    /**
+     * The command that runs to completion, once per release, before anything rolls.
+     *
+     *     release: php artisan migrate --force
+     *
+     * A command, parsed like a process's — a string or a list, never a shell.
+     * The deploy runs it as a Job in the new release's container, waits for it,
+     * and stops with the running release untouched if it fails.
+     *
+     * @param  array<mixed>  $parsed
+     * @return list<string>
+     */
+    private function release(array $parsed): array
+    {
+        $release = $parsed['release'] ?? null;
+
+        if ($release === null) {
+            return [];
+        }
+
+        // A LIST, not any array: `release: {command: migrate}` would otherwise
+        // be read as the command `migrate` with its key thrown away, which is a
+        // setting quietly meaning something other than what it says.
+        if (is_array($release) && (! array_is_list($release) || array_filter($release, is_string(...)) !== $release)) {
+            throw new RuntimeException(
+                '`release` is a command line, or a list of arguments — `["php", "artisan", "migrate", "--force"]`. '
+                .'This one has a setting nothing reads, or an argument that is not text.'
+            );
+        }
+
+        if (! is_string($release) && ! is_array($release)) {
+            throw new RuntimeException(
+                '`release` is the command that runs before every deploy rolls out, such as '
+                .'`php artisan migrate --force` — a command line, or a list of arguments.'
+            );
+        }
+
+        return CommandLine::parse($release, 'release');
     }
 
     /**

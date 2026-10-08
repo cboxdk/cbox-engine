@@ -34,6 +34,9 @@ port: 80
 | `mounts` | map | `[]` | host directories the container should see |
 | `scale_to_zero` | bool | `false` | let the web process idle down and wake on a request |
 | `idle_seconds` | int | — | how long before it does |
+| `secrets` | map | `[]` | env vars from Secrets on the platform: `APP_KEY: { secret: myapp, key: APP_KEY }` |
+| `health` | map | — | the web process's probes: `path` (readiness), `liveness`, `token` |
+| `release` | command | — | runs to completion before every deploy rolls: `php artisan migrate --force` |
 
 ## What the reader refuses
 
@@ -51,6 +54,9 @@ API server in a vocabulary they never opted into.
 - **A command that ends inside a quote.**
 - **An unknown key**, so a typo is a refusal rather than a setting that silently
   did nothing.
+- **A secret written as a value**, a variable under both `env` and `secrets`, or
+  one a resource already binds — see [Secrets](#secrets).
+- **A health token that is not a `secrets` entry**, including one under `env`.
 
 Commands may be a string or a list. The string is split carefully — quoted
 arguments stay whole — because making people write YAML lists for every command
@@ -91,3 +97,84 @@ services:
 ```
 
 No volumes, no backups, no promises. What is worth keeping goes in `resources`.
+
+## Secrets
+
+```yaml
+secrets:
+  APP_KEY: { secret: myapp, key: APP_KEY }
+  MAIL_PASSWORD: { secret: myapp-mail, key: MAIL_PASSWORD }
+```
+
+An environment variable from a Secret that **already exists on the platform**, in
+the project's namespace (`cbox-<name>`). The file is committed, so it says where a
+value lives, never the value: each entry compiles to a `secretKeyRef` on every
+container of the project — the web process, every process, `cbox run` and the
+release. Nothing creates, changes or removes the Secret; it is the operator's.
+
+**Create the Secret before the first deploy.** A missing Secret or key is not
+skipped: Kubernetes holds the pod in `CreateContainerConfigError`, `cbox deploy`
+reports which Secret it was looking for, and the pod starts on the next deploy
+once the Secret is there. Locally:
+
+```bash
+kubectl -n cbox-myapp create secret generic myapp \
+  --from-literal=APP_KEY="$(php artisan key:generate --show)"
+```
+
+Refused: a variable that is not `[A-Za-z_][A-Za-z0-9_]*`, a Secret name or key
+Kubernetes would refuse, any setting besides `secret` and `key` (there is no
+`optional`), a variable also under `env`, also bound by a resource, or the `url`
+variable.
+
+## Health
+
+```yaml
+health:
+  path: /health/ready     # readiness: may this pod take traffic?
+  liveness: /up           # liveness: is the process alive at all?
+  token: HEALTH_TOKEN     # optional: sent to `path` as `Authorization: Bearer`
+```
+
+Probes on the **web** process only; workers listen on nothing.
+
+| Probe | Path | Timing |
+|---|---|---|
+| startup | `liveness` | every 2 s, up to five minutes — liveness and readiness wait for it |
+| liveness | `liveness` | every 10 s; restarted after three misses |
+| readiness | `path` | every 10 s; out of rotation after three misses |
+
+Keep `liveness` shallow. A liveness probe that checks the database restarts every
+pod the moment the database is slow.
+
+**`token` names a variable, and it must be a `secrets` entry.** Kubernetes cannot
+put a Secret into a probe header, so the platform has the container ask itself:
+readiness becomes a command that reads the token from the container's own
+environment and sends it with `curl`, the value never written into the pod spec.
+That needs `curl` in the image — every Cbox base image has it. Without `token`,
+readiness is a plain HTTP request.
+
+## Release
+
+```yaml
+release: php artisan migrate --force
+```
+
+A command, written like a process's, that runs **once per release, to
+completion, before anything rolls**:
+
+1. Everything the release needs is applied — the namespace, Secrets, Services,
+   databases — but not the Deployments. The running release keeps serving.
+2. The deploy waits for the databases, then runs the command as a Job in the
+   **new** release's container: same image, environment, `secrets` and bindings.
+3. If it fails, the deploy stops and prints its output. Nothing rolls; the old
+   pods keep running the old code.
+4. If it succeeds, the Deployments roll behind their readiness probes.
+
+The Job is named for what it runs, so deploying the same release twice does not
+migrate twice, and a release that failed is retried on the next deploy. Because
+the old pods still serve while it runs, a migration has to be safe for the
+release before it: add, never drop or rename what the old code reads.
+
+`cbox push` does not carry `secrets`, `health` or `release` yet; it says so and
+what to do in Cortex instead.

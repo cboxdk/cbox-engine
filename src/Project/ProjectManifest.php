@@ -11,7 +11,9 @@ use Cbox\Platform\Binding\BindingSpec;
 use Cbox\Platform\Binding\ConnectionField;
 use Cbox\Platform\Binding\ConnectionSource;
 use Cbox\Platform\Database\DatabaseSpec;
+use Cbox\Platform\Service\HealthCheck;
 use Cbox\Platform\Service\ProcessSpec;
+use Cbox\Platform\Service\SecretReference;
 use Cbox\Platform\Service\ServiceSpec;
 use Cbox\Platform\Service\SourceMount;
 
@@ -142,6 +144,30 @@ readonly class ProjectManifest
          * @var list<SourceMount>
          */
         public array $mounts = [],
+        /**
+         * Environment variables taken from Secrets an operator created.
+         *
+         * BY NAME, NEVER BY VALUE: the manifest is committed, so what it carries
+         * is where a value lives — a Secret and a key on the cluster — and the
+         * value itself never passes through this tool.
+         *
+         * @var list<SecretReference>
+         */
+        public array $secrets = [],
+        /**
+         * Readiness, liveness and startup probes for the web process.
+         *
+         * Null is no probes: a pod counts as ready the moment its container
+         * starts, which is what every project got before this was expressible.
+         */
+        public ?HealthCheck $health = null,
+        /**
+         * What runs to completion, once per release, before anything rolls —
+         * `php artisan migrate --force`. Empty for nothing.
+         *
+         * @var list<string>
+         */
+        public array $release = [],
     ) {}
 
     /** The same project, put away or brought back. */
@@ -167,6 +193,9 @@ readonly class ProjectManifest
             services: $this->services,
             mountPath: $this->mountPath,
             mounts: $this->mounts,
+            secrets: $this->secrets,
+            health: $this->health,
+            release: $this->release,
         );
     }
 
@@ -199,6 +228,9 @@ readonly class ProjectManifest
             services: $this->services,
             mountPath: $this->mountPath,
             mounts: $this->mounts,
+            secrets: $this->secrets,
+            health: $this->health,
+            release: $this->release,
         );
     }
 
@@ -251,6 +283,9 @@ readonly class ProjectManifest
             services: $this->services,
             mountPath: $this->mountPath,
             mounts: $combined,
+            secrets: $this->secrets,
+            health: $this->health,
+            release: $this->release,
         );
     }
 
@@ -300,6 +335,9 @@ readonly class ProjectManifest
             services: $this->services,
             mountPath: $this->mountPath,
             mounts: $this->mounts,
+            secrets: $this->secrets,
+            health: $this->health,
+            release: $this->release,
         );
     }
 
@@ -351,6 +389,9 @@ readonly class ProjectManifest
             services: $this->services,
             mountPath: $this->mountPath,
             mounts: $this->mounts,
+            secrets: $this->secrets,
+            health: $this->health,
+            release: $this->release,
         );
     }
 
@@ -376,6 +417,9 @@ readonly class ProjectManifest
             services: $this->services,
             mountPath: $this->mountPath,
             mounts: $this->mounts,
+            secrets: $this->secrets,
+            health: $this->health,
+            release: $this->release,
         );
     }
 
@@ -402,6 +446,9 @@ readonly class ProjectManifest
             services: $this->services,
             mountPath: $this->mountPath,
             mounts: $this->mounts,
+            secrets: $this->secrets,
+            health: $this->health,
+            release: $this->release,
         );
     }
 
@@ -517,6 +564,13 @@ readonly class ProjectManifest
             // Which addresses may speak for a client. A property of the CLUSTER,
             // which is why it is here and not in anybody's manifest.
             podCidr: ClusterConfig::POD_CIDR,
+            // By reference, into every container — web, processes, runs and
+            // the release — because they all start from the web container.
+            secretRefs: $this->secrets,
+            health: $this->health,
+            // Carried, not compiled: the service's own set never contains it.
+            // The deployer runs it, to completion, before the workloads roll.
+            release: $this->release,
         );
     }
 
@@ -603,6 +657,9 @@ readonly class ProjectManifest
             services: $this->services,
             mountPath: $this->mountPath,
             mounts: $this->mounts,
+            secrets: $this->secrets,
+            health: $this->health,
+            release: $this->release,
         );
     }
 

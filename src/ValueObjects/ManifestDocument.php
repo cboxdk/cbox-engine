@@ -124,6 +124,31 @@ readonly class ManifestDocument
         return is_array($value) ? array_values(array_filter($value, is_string(...))) : [];
     }
 
+    /**
+     * The status of one of the object's conditions — `True`, `False`,
+     * `Unknown` — or empty when it reports no such condition.
+     *
+     * A condition is how a Job says it finished: `Complete` or `Failed`, each
+     * `True` only once it is decided. Its absence is the ordinary answer while
+     * the Job is still running.
+     */
+    public function condition(string $type): string
+    {
+        $conditions = $this->at('status', 'conditions');
+
+        if (! is_array($conditions)) {
+            return '';
+        }
+
+        foreach ($conditions as $condition) {
+            if (is_object($condition) && ($condition->type ?? null) === $type) {
+                return is_string($condition->status ?? null) ? $condition->status : '';
+            }
+        }
+
+        return '';
+    }
+
     /** @return array<string, string> */
     public function labels(): array
     {
